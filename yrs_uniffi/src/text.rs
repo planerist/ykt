@@ -6,7 +6,7 @@ use crate::transaction::YTransaction;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::types::TYPE_REFS_TEXT;
+use yrs::types::{Delta, TYPE_REFS_TEXT};
 use yrs::{GetString, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
@@ -85,7 +85,8 @@ impl YText {
 
     /// Returns length of an underlying string stored in this `YText` instance,
     /// understood as a number of UTF-8 encoded bytes.
-    pub fn length(&self, txn: &YTransaction) -> Result<u32> {
+    #[uniffi::method(default(txn=None))]
+    pub fn length(&self, txn: Option<Arc<YTransaction>>) -> Result<u32> {
         match self.get_inner().borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.len() as u32),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
@@ -93,7 +94,8 @@ impl YText {
     }
 
     /// Returns an underlying shared string stored in this data type.
-    pub fn to_string(&self, txn: &YTransaction) -> Result<String> {
+    #[uniffi::method(default(txn=None))]
+    pub fn get_text(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {
         match self.get_inner().borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.clone()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.get_string(txn))),
@@ -105,12 +107,13 @@ impl YText {
     /// Optional object with defined `attributes` will be used to wrap provided text `chunk`
     /// with a formatting blocks.`attributes` are only supported for a `YText` instance which
     /// already has been integrated into document store.
+    #[uniffi::method(default(attributes=None, txn=None))]
     pub fn insert(
         &self,
         index: u32,
         chunk: &str,
         attributes: Option<String>,
-        txn: Arc<YTransaction>,
+        txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
 
@@ -138,12 +141,13 @@ impl YText {
     /// Wraps an existing piece of text within a range described by `index`-`length` parameters with
     /// formatting blocks containing provided `attributes` metadata. This method only works for
     /// `YText` instances that already have been integrated into document store.
+    #[uniffi::method(default(txn=None))]
     pub fn format(
         &self,
         index: u32,
         length: u32,
         attributes: String,
-        txn: Arc<YTransaction>,
+        txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
         let attrs = match parse_attrs(Some(attributes))? {
             Some(attrs) => attrs,
@@ -164,8 +168,14 @@ impl YText {
     /// Optional object with defined `attributes` will be used to wrap provided text `chunk`
     /// with a formatting blocks.`attributes` are only supported for a `YText` instance which
     /// already has been integrated into document store.
-    pub fn push(&self, chunk: &str, attributes: String, txn: Arc<YTransaction>) -> Result<()> {
-        let attributes = parse_attrs(Some(attributes))?;
+    #[uniffi::method(default(attributes=None, txn=None))]
+    pub fn push(
+        &self,
+        chunk: &str,
+        attributes: Option<String>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<()> {
+        let attributes = parse_attrs(attributes)?;
 
         match self.get_inner().borrow_mut().deref_mut() {
             SharedCollection::Prelim(ref mut c) => {
@@ -191,7 +201,8 @@ impl YText {
 
     /// Deletes a specified range of of characters, starting at a given `index`.
     /// Both `index` and `length` are counted in terms of a number of UTF-8 character bytes.
-    pub fn delete(&self, index: u32, length: u32, txn: Arc<YTransaction>) -> Result<()> {
+    #[uniffi::method(default(txn=None))]
+    pub fn delete(&self, index: u32, length: u32, txn: Option<Arc<YTransaction>>) -> Result<()> {
         match self.get_inner().borrow_mut().deref_mut() {
             SharedCollection::Prelim(ref mut c) => {
                 c.drain((index as usize)..((index + length) as usize));

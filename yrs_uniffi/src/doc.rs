@@ -5,6 +5,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_DOC;
 use yrs::{Doc, OffsetKind, Options, Transact};
+use crate::tools::Error;
+use crate::tools::Result;
 
 /// A ywasm document type. Documents are most important units of collaborative resources management.
 /// All shared collections live within a scope of their corresponding documents. All updates are
@@ -132,12 +134,14 @@ impl YDoc {
     /// const text = doc.getText('name')
     /// doc.transact(txn => text.insert(txn, 0, 'hello world'))
     /// ```
-    pub fn transaction(&self, origin: Option<Vec<u8>>) -> YTransaction {
-        if let Some(origin) = origin {
-            YTransaction::from(self.transact_mut_with(yrs::Origin::from(origin.as_slice())))
+    pub fn transaction(&self, origin: Option<Vec<u8>>) -> Result<YTransaction> {
+        let inner = if let Some(origin) = origin {
+            self.try_transact_mut_with(yrs::Origin::from(origin.as_slice()))
         } else {
-            YTransaction::from(self.transact_mut())
-        }
+            self.try_transact_mut()
+        }.map_err(|_| Error::AnotherRwTx)?;
+
+        Ok(YTransaction::from(inner))
     }
 
     /// Returns a `YText` shared data type, that's accessible for subsequent accesses using given
@@ -173,28 +177,6 @@ pub struct YDocOptions {
     #[uniffi(default = None)]
     pub should_load: Option<bool>,
 }
-//
-// #[uniffi::export]
-// impl YDocOptions {
-//     #[uniffi::constructor]
-//     pub fn new(
-//         client_id: Option<u64>,
-//         guid: Option<String>,
-//         collection_id: Option<String>,
-//         gc: Option<bool>,
-//         auto_load: Option<bool>,
-//         should_load: Option<bool>,
-//     ) -> Self {
-//         Self {
-//             client_id,
-//             guid,
-//             collection_id,
-//             gc,
-//             auto_load,
-//             should_load,
-//         }
-//     }
-// }
 
 impl YDocOptions {
     fn fill(self, options: &mut Options) {

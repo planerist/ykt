@@ -76,26 +76,45 @@ impl<S: SharedRef + 'static> Integrated<S> {
         Integrated { hook: desc, doc }
     }
 
-    pub fn readonly<F, T>(&self, txn: &YTransaction, f: F) -> Result<T>
+    pub fn readonly<F, R>(&self, txn: Option<Arc<YTransaction>>, f: F) -> Result<R>
     where
-        F: FnOnce(&S, &TransactionMut<'_>) -> Result<T>,
+        F: FnOnce(&S, &TransactionMut<'_>) -> Result<R>,
     {
-        let inner = txn.get_inner();
-        let txn = inner.borrow();
-        let txn = txn.deref();
-        let shared_ref = self.resolve(txn)?;
-        f(&shared_ref, txn)
+        match txn {
+            Some(txn) => {
+                let inner = txn.get_inner();
+                let txn = inner.borrow();
+                let txn = txn.deref();
+                let txn = txn.deref();
+                let shared_ref= self.resolve(txn)?;
+                f(&shared_ref, txn)
+            }
+            None => {
+                let txn = self.transact_mut()?; // :( rust type inference problem
+                let shared_ref= self.resolve(&txn)?;
+                f(&shared_ref, &txn)
+            }
+        }
     }
 
-    pub fn mutably<F, T>(&self, txn: Arc<YTransaction>, f: F) -> Result<T>
+    pub fn mutably<F, T>(&self, txn: Option<Arc<YTransaction>>, f: F) -> Result<T>
     where
         F: FnOnce(&S, &mut TransactionMut<'_>) -> Result<T>,
     {
-        let inner = txn.get_inner();
-        let mut txn = inner.borrow_mut();
-        let txn = txn.deref_mut();
-        let shared_ref = self.resolve(txn)?;
-        f(&shared_ref, txn)
+        match txn {
+            Some(txn) => {
+                let inner = txn.get_inner();
+                let mut txn = inner.borrow_mut();
+                let txn = txn.deref_mut();
+                let shared_ref = self.resolve(txn)?;
+                f(&shared_ref, txn)
+            }
+            None => {
+                let mut txn = self.transact_mut()?;
+                let shared_ref = self.resolve(&mut txn)?;
+                f(&shared_ref, &mut txn)
+            }
+        }
     }
 
     pub fn resolve<T: ReadTxn>(&self, txn: &T) -> Result<S> {

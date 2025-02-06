@@ -1,13 +1,11 @@
 use crate::doc::YDoc;
 use crate::tools::Error;
 use crate::tools::Result;
-use crate::transaction::YTransaction;
-use crate::{js, tools};
-use std::ops::Deref;
+use crate::{tools};
 use std::sync::Arc;
 use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1, EncoderV2};
-use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
+use yrs::{ReadTxn, StateVector, Transact, Update};
 
 /// Encodes a state vector of a given ywasm document into its binary representation using lib0 v1
 /// encoding. State vector is a compact representation of updates performed on a given document and
@@ -136,7 +134,7 @@ fn state_vector_from_vec(vector: &[u8]) -> Result<StateVector> {
 ///
 /// applyUpdateV2(localDoc, remoteDelta)
 /// ```
-#[uniffi::export]
+#[uniffi::export(default(origin=None))]
 pub fn apply_update(doc: &YDoc, update: &[u8], origin: Option<Vec<u8>>) -> Result<()> {
     let mut txn = if let Some(origin) = origin {
         doc.0.try_transact_mut_with(origin.as_slice())
@@ -171,7 +169,7 @@ pub fn apply_update(doc: &YDoc, update: &[u8], origin: Option<Vec<u8>>) -> Resul
 ///
 /// applyUpdateV2(localDoc, remoteDelta)
 /// ```
-#[uniffi::export]
+#[uniffi::export(default(origin=None))]
 pub fn apply_update_v2(doc: &YDoc, update: &[u8], origin: Option<Vec<u8>>) -> Result<()> {
     let mut txn = if let Some(origin) = origin {
         doc.0.try_transact_mut_with(origin.as_slice())
@@ -189,7 +187,7 @@ pub fn apply_update_v2(doc: &YDoc, update: &[u8], origin: Option<Vec<u8>>) -> Re
 }
 
 #[derive(uniffi::Object)]
-struct YSnapshot(yrs::Snapshot);
+pub struct YSnapshot(yrs::Snapshot);
 
 #[uniffi::export]
 pub fn snapshot(doc: &YDoc) -> Arc<YSnapshot> {

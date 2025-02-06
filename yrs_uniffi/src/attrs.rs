@@ -2,45 +2,6 @@ use crate::tools::Error;
 use yrs::types::Attrs;
 use yrs::Any;
 
-// #[uniffi::export]
-// fn ytrue() -> YBoolAttr {
-//     YBoolAttr::new(true)
-// }
-//
-// #[uniffi::export]
-// fn yfalse() -> YBoolAttr {
-//     YBoolAttr::new(false)
-// }
-//
-// #[uniffi::export]
-// pub trait YAttr: Send + Sync {
-//
-// }
-//
-// impl YAttr for String {
-// }
-
-//
-// #[derive(uniffi::Object)]
-// pub struct YMapAttr {}
-//
-// #[derive(uniffi::Object)]
-// pub struct YBoolAttr {
-//     value: bool
-// }
-
-// impl YBoolAttr {
-//     pub fn new(v: bool) -> Self {
-//         YBoolAttr {
-//             value: v
-//         }
-//     }
-// }
-//
-// #[uniffi::export]
-// impl YAttr for YMapAttr {
-// }
-
 pub fn parse_attrs(attributes: Option<String>) -> crate::tools::Result<Option<Attrs>> {
     match attributes {
         None => Ok(None),

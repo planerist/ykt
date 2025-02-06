@@ -100,25 +100,6 @@ impl YTransaction {
         self.inner.clone()
     }
 
-    // fn raise_alread_committed(&self) -> PyErr {
-    //     PyAssertionError::new_err("Transaction already committed!")
-    // }
-    //
-    // pub fn transact<F, R>(&self, f: F) -> PyResult<R>
-    // where
-    //     F: FnOnce(&mut YTransactionInner) -> R,
-    // {
-    //     let inner = self.get_inner();
-    //     let mut txn = inner.borrow_mut();
-    //     if txn.committed {
-    //         Err(self.raise_alread_committed())
-    //     } else {
-    //         Ok(f(&mut txn))
-    //     }
-    // }
-}
-
-impl YTransaction {
     fn try_apply(&self, update: Update) -> Result<()> {
         self.get_inner()
             .borrow_mut()

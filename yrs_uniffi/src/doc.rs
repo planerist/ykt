@@ -55,7 +55,7 @@ impl YDoc {
     /// globally unique identifier (it's up to caller to ensure that requirement). Otherwise it will
     /// be assigned a randomly generated number.
     #[uniffi::constructor]
-    pub fn new(options: Option<DocOptions>) -> Self {
+    pub fn new(options: Option<YDocOptions>) -> Self {
         let mut opt = Options::default();
 
         if crate::tools::is_wasm() {
@@ -151,48 +151,52 @@ impl YDoc {
         let shared_ref = self.get_or_insert_text(name);
         YText::new(SharedCollection::integrated(shared_ref, self.0.clone()))
     }
-
-    // /// Returns a `YArray` shared data type, that's accessible for subsequent accesses using given
-    // /// `name`.
-    // ///
-    // /// If there was no instance with this name before, it will be created and then returned.
-    // ///
-    // /// If there was an instance with this name, but it was of different type, it will be projected
-    // /// onto `YArray` instance.
-    // pub fn get_array(&self, name: &str) -> Arc<YArray> {
-    //     let shared_ref = self.get_or_insert_array(name);
-    //     YArray(SharedCollection::integrated(shared_ref, self.0.clone()))
-    // }
-    //
-    // /// Returns a `YMap` shared data type, that's accessible for subsequent accesses using given
-    // /// `name`.
-    // ///
-    // /// If there was no instance with this name before, it will be created and then returned.
-    // ///
-    // /// If there was an instance with this name, but it was of different type, it will be projected
-    // /// onto `YMap` instance.
-    // pub fn get_map(&self, name: &str) -> Arc<YMap> {
-    //     let shared_ref = self.get_or_insert_map(name);
-    //     YMap(SharedCollection::integrated(shared_ref, self.0.clone()))
-    // }
 }
 
 #[derive(uniffi::Record)]
-pub struct DocOptions {
+pub struct YDocOptions {
+    #[uniffi(default = None)]
     pub client_id: Option<u64>,
 
+    #[uniffi(default = None)]
     pub guid: Option<String>,
 
+    #[uniffi(default = None)]
     pub collection_id: Option<String>,
 
+    #[uniffi(default = None)]
     pub gc: Option<bool>,
 
+    #[uniffi(default = None)]
     pub auto_load: Option<bool>,
 
+    #[uniffi(default = None)]
     pub should_load: Option<bool>,
 }
+//
+// #[uniffi::export]
+// impl YDocOptions {
+//     #[uniffi::constructor]
+//     pub fn new(
+//         client_id: Option<u64>,
+//         guid: Option<String>,
+//         collection_id: Option<String>,
+//         gc: Option<bool>,
+//         auto_load: Option<bool>,
+//         should_load: Option<bool>,
+//     ) -> Self {
+//         Self {
+//             client_id,
+//             guid,
+//             collection_id,
+//             gc,
+//             auto_load,
+//             should_load,
+//         }
+//     }
+// }
 
-impl DocOptions {
+impl YDocOptions {
     fn fill(self, options: &mut Options) {
         if let Some(value) = self.client_id {
             options.client_id = value;

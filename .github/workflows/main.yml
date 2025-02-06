@@ -1,0 +1,74 @@
+name: Main
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-yrs_uniffi-macos:
+    runs-on: macos-latest
+    steps:
+      - name: checkout sources
+        uses: actions/checkout@v2
+
+      - name: install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: build default
+        run: cargo build --verbose --release -p yrs_uniffi
+
+      - name: Upload lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-darwin
+          path: target/release/libyrs_uniffi.dylib
+
+  build-yrs_uniffi-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout sources
+        uses: actions/checkout@v2
+
+      - name: install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: build default
+        run: cargo build --verbose --release -p yrs_uniffi
+
+      - name: Upload lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-linux
+          path: target/release/libyrs_uniffi.so
+
+  build-yrs_uniffi-win:
+    runs-on: windows-latest
+    steps:
+      - name: checkout sources
+        uses: actions/checkout@v2
+
+      - name: install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: build default
+        run: cargo build --verbose --release -p yrs_uniffi
+
+      - name: Upload lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: uniffi-linux
+          path: target/release/libyrs_uniffi.dll

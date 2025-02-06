@@ -1,0 +1,16 @@
+target/
+perf.data
+perf.data.old
+pkg
+.idea
+ykt.iml
+.DS_Store
+.vscode/
+dist/
+out/
+
+
+.gradle
+build
+buildCache
+.kotlin

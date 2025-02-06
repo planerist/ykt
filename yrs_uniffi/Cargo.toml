@@ -1,0 +1,27 @@
+[package]
+name = "yrs_uniffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+yrs = { version = "0.22.0", features = ["weak"] }
+uniffi = { version = "0.28.3" }
+thiserror = "2.0.11"
+base64 = "0.22.1"
+
+[build-dependencies]
+uniffi = { version = "0.28.3", features = ["build", "cli"] }
+
+[profile.release]
+codegen-units = 1
+opt-level = 3
+lto = true
+
+[[bin]]
+# This can be whatever name makes sense for your project, but the rest of this tutorial assumes uniffi-bindgen.
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+uniffi = { version = "0.28.3" }

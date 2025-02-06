@@ -25,11 +25,20 @@ jobs:
       - name: build default
         run: cargo build --verbose --release -p yrs_uniffi
 
+      - name: build kotlin
+        run: cargo run --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.dylib
+
       - name: Upload lib
         uses: actions/upload-artifact@v4
         with:
           name: uniffi-darwin
           path: target/release/libyrs_uniffi.dylib
+
+      - name: Upload kotlin lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: kt-uniffi
+          path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
 
   build-yrs_uniffi-linux:
     runs-on: ubuntu-latest
@@ -51,24 +60,3 @@ jobs:
         with:
           name: uniffi-linux
           path: target/release/libyrs_uniffi.so
-
-  build-yrs_uniffi-win:
-    runs-on: windows-latest
-    steps:
-      - name: checkout sources
-        uses: actions/checkout@v2
-
-      - name: install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: build default
-        run: cargo build --verbose --release -p yrs_uniffi
-
-      - name: Upload lib
-        uses: actions/upload-artifact@v4
-        with:
-          name: uniffi-linux
-          path: target/release/libyrs_uniffi.dll

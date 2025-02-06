@@ -3,7 +3,6 @@ use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
 use crate::{js, tools};
-use base64::prelude::*;
 use std::ops::Deref;
 use std::sync::Arc;
 use yrs::updates::decoder::{Decode, DecoderV1};

@@ -6,12 +6,6 @@ pluginManagement {
     }
 }
 
-buildCache {
-    local {
-        directory = File(rootDir, "buildCache")
-    }
-}
-
 plugins { id("org.gradle.toolchains.foojay-resolver") version "0.8.0" }
 
 @Suppress("UnstableApiUsage")

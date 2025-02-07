@@ -93,7 +93,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build y_kt
-        run: ./gradlew test jar
+        run: ./gradlew build test jar kotlinSourcesJar
 
       - name: Upload jar
         uses: actions/upload-artifact@v4

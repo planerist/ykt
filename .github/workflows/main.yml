@@ -22,11 +22,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: build default
+      - name: build
         run: cargo build --release -p yrs_uniffi
-
-      - name: build kotlin
-        run: cargo run --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.dylib
 
       - name: Upload lib
         uses: actions/upload-artifact@v4
@@ -46,8 +43,11 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: build default
+      - name: build
         run: cargo build --release -p yrs_uniffi
+
+      - name: export kotlin uniffi
+        run: cargo run --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.so
 
       - name: Upload lib
         uses: actions/upload-artifact@v4
@@ -55,7 +55,7 @@ jobs:
           name: uniffi-linux
           path: target/release/libyrs_uniffi.so
 
-      - name: Upload kotlin lib
+      - name: Upload kotlin uniffi
         uses: actions/upload-artifact@v4
         with:
           name: kt-uniffi

@@ -134,9 +134,9 @@ impl YDoc {
     /// const text = doc.getText('name')
     /// doc.transact(txn => text.insert(txn, 0, 'hello world'))
     /// ```
-    pub fn transaction(&self, origin: Option<Vec<u8>>) -> Result<YTransaction> {
+    pub fn transaction(&self, origin: Option<String>) -> Result<YTransaction> {
         let inner = if let Some(origin) = origin {
-            self.try_transact_mut_with(yrs::Origin::from(origin.as_slice()))
+            self.try_transact_mut_with(yrs::Origin::from(origin))
         } else {
             self.try_transact_mut()
         }.map_err(|_| Error::AnotherRwTx)?;

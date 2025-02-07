@@ -1,13 +1,16 @@
-use crate::attrs::parse_attrs;
+use crate::attrs::{into_yattrs, into_yvalue, parse_attrs, YAttributes};
 use crate::collection::SharedCollection;
+use crate::delta::{y_into_delta, YDelta};
+use crate::delta::YDelta::YInsert;
+use crate::snapshots::{snapshot, YSnapshot};
 use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::types::{Delta, TYPE_REFS_TEXT};
-use yrs::{GetString, Text, TextRef};
+use yrs::types::{Attrs, Delta, TYPE_REFS_TEXT};
+use yrs::{GetString, Out, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -210,6 +213,69 @@ impl YText {
             }
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
                 c.remove_range(txn, index, length);
+                Ok(())
+            }),
+        }
+    }
+
+    /// Returns the Delta representation of this YText type.
+    #[uniffi::method(default(snapshot=None,prev_snapshot=None,txn=None))]
+    pub fn to_delta(
+        &self,
+        snapshot: Option<Arc<YSnapshot>>,
+        prev_snapshot: Option<Arc<YSnapshot>>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<Vec<YDelta>> {
+        match self.get_inner().borrow_mut().deref_mut() {
+            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                let hi: Option<Snapshot> = if let Some(snap) = snapshot {
+                    let snap = snap.clone().deref().deref().clone();
+                    Some(snap)
+                } else {
+                    None
+                };
+                let lo: Option<Snapshot> = if let Some(snap) = prev_snapshot {
+                    let snap = snap.clone().deref().deref().clone();
+                    Some(snap)
+                } else {
+                    None
+                };
+
+                let delta = c.diff_range(txn, hi.as_ref(), lo.as_ref(), |change| change);
+
+                let mut array: Vec<YDelta> = vec![];
+                for d in delta {
+                    let attrs = match d.attributes {
+                        None => None,
+                        Some(attrs) => Some(into_yattrs(*attrs))
+                    };
+
+                    if let Out::Any(any) = d.insert {
+                        let d = YInsert(into_yvalue(&any), attrs);
+                        array.push(d);
+                    } else {
+                        // TODO: panic? error?
+                    }
+                }
+                Ok(array)
+            }),
+        }
+    }
+
+    #[uniffi::method(default(txn=None))]
+    pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<()> {
+        match self.get_inner().borrow_mut().deref_mut() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                let mut result = Vec::new();
+                for yd in delta.iter() {
+                    let d = y_into_delta(yd);
+                    result.push(d);
+                }
+                c.apply_delta(txn, result);
                 Ok(())
             }),
         }

@@ -5,5 +5,6 @@ mod snapshots;
 mod text;
 mod tools;
 mod transaction;
+mod delta;
 
 uniffi::setup_scaffolding!();

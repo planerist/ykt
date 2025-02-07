@@ -56,7 +56,7 @@ impl YDoc {
     /// Creates a new ywasm document. If `id` parameter was passed it will be used as this document
     /// globally unique identifier (it's up to caller to ensure that requirement). Otherwise it will
     /// be assigned a randomly generated number.
-    #[uniffi::constructor]
+    #[uniffi::constructor(default(options=None))]
     pub fn new(options: Option<YDocOptions>) -> Self {
         let mut opt = Options::default();
 

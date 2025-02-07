@@ -35,8 +35,8 @@ This project source is based on the y-crdt ywasm project source.
   - [ ] id
   - [ ] insert_embed 
   - [ ] quote
-  - [ ] to_delta
-  - [ ] apply_delta
+  - [x] to_delta
+  - [x] apply_delta
   - [ ] observe
   - [ ] observe_deep
   - [ ] unobserve
@@ -48,6 +48,7 @@ This project source is based on the y-crdt ywasm project source.
 - [ ] YWeakLink
 - [ ] YXmlElement, YXmlFragment, YXmlText
 - [ ] Review & simplify Error 
+- [ ] YOutput: support all types (currently only str is supported)
 
 
 ## Maintainers

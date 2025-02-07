@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use crate::doc::YDoc;
 use crate::tools::Error;
 use crate::tools::Result;
@@ -188,6 +189,15 @@ pub fn apply_update_v2(doc: &YDoc, update: &[u8], origin: Option<Vec<u8>>) -> Re
 
 #[derive(uniffi::Object)]
 pub struct YSnapshot(yrs::Snapshot);
+
+impl Deref for YSnapshot {
+    type Target = yrs::Snapshot;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[uniffi::export]
 pub fn snapshot(doc: &YDoc) -> Arc<YSnapshot> {

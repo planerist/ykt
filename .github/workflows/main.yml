@@ -63,6 +63,7 @@ jobs:
 
   build-yrs_kt:
     runs-on: ubuntu-latest
+    needs: [build-yrs_uniffi-linux, build-yrs_uniffi-macos]
     steps:
       - name: checkout sources
         uses: actions/checkout@v2

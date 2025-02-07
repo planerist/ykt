@@ -23,7 +23,7 @@ jobs:
           override: true
 
       - name: build default
-        run: cargo build --verbose --release -p yrs_uniffi
+        run: cargo build --release -p yrs_uniffi
 
       - name: build kotlin
         run: cargo run --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.dylib
@@ -33,12 +33,6 @@ jobs:
         with:
           name: uniffi-darwin
           path: target/release/libyrs_uniffi.dylib
-
-      - name: Upload kotlin lib
-        uses: actions/upload-artifact@v4
-        with:
-          name: kt-uniffi
-          path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
 
   build-yrs_uniffi-linux:
     runs-on: ubuntu-latest
@@ -53,10 +47,55 @@ jobs:
           override: true
 
       - name: build default
-        run: cargo build --verbose --release -p yrs_uniffi
+        run: cargo build --release -p yrs_uniffi
 
       - name: Upload lib
         uses: actions/upload-artifact@v4
         with:
           name: uniffi-linux
           path: target/release/libyrs_uniffi.so
+
+      - name: Upload kotlin lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: kt-uniffi
+          path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
+
+  build-yrs_kt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout sources
+        uses: actions/checkout@v2
+
+      - name: install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: kt-uniffi
+          path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: uniffi-linux
+          path: yrs_kt/src/main/resources/linux-x86-64/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: uniffi-darwin
+          path: yrs_kt/src/main/resources/darwin-x86-64/
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build y_kt
+        run: ./gradlew build
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ykt
+          path: yrs_kt/build/libs

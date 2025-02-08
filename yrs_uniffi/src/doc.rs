@@ -134,6 +134,7 @@ impl YDoc {
     /// const text = doc.getText('name')
     /// doc.transact(txn => text.insert(txn, 0, 'hello world'))
     /// ```
+    #[uniffi::method(default(origin=None))]
     pub fn transaction(&self, origin: Option<String>) -> Result<YTransaction> {
         let inner = if let Some(origin) = origin {
             self.try_transact_mut_with(yrs::Origin::from(origin))

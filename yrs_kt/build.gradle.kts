@@ -5,7 +5,7 @@ plugins {
 version = "1.0-SNAPSHOT"
 
 dependencies {
-    implementation("net.java.dev.jna:jna:5.16.0")
+    api("net.java.dev.jna:jna:5.16.0")
     testImplementation(kotlin("test"))
 }
 

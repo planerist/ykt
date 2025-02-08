@@ -128,6 +128,30 @@ class YDocTest {
     }
 
     @Test
+    fun TestDeltaApplyDelta3() {
+        val doc = YDoc()
+        val text = doc.getText("text")
+        text.applyDelta(listOf(
+            YInsert(YValue.String("hello"), null),
+            YInsert(YValue.String("\n"), null),
+        ))
+        assertEquals(6u, text.length())
+
+        text.applyDelta(listOf(
+            YDelta.YRetain(6u, null),
+            YInsert(YValue.String("hello2"), null),
+            YInsert(YValue.String("\n"), null),
+        ))
+        assertEquals(13u, text.length())
+
+        assertEquals(
+            listOf(
+                YInsert(YValue.String("hello\nhello2\n"), null),
+            ), text.toDelta()
+        )
+    }
+
+    @Test
     fun TestToString() {
         val doc = YDoc()
         val text = doc.getText("text")

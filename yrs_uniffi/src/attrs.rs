@@ -38,7 +38,7 @@ fn into_yattrs2(attrs: &HashMap<String, Any>) -> YAttributes {
 }
 
 pub fn into_yvalue(v: &Any) -> YValue {
-    let attr_value = match v {
+    match v {
         Any::Null => YValue::Null,
         Any::Undefined => YValue::Null,
         Any::Bool(v) => YValue::Bool(*v),
@@ -53,12 +53,11 @@ pub fn into_yvalue(v: &Any) -> YValue {
             let v = v.clone();
             YValue::AttrMap(into_yattrs2(v.deref()))
         }
-    };
-    attr_value
+    }
 }
 
 pub fn from_yvalue(v: &YValue) -> Any {
-    let any = match v {
+    match v {
         YValue::Null => Any::Null,
         YValue::Bool(v) => Any::Bool(*v),
         YValue::Number(v) => Any::Number(*v),
@@ -73,8 +72,7 @@ pub fn from_yvalue(v: &YValue) -> Any {
             }
             Any::Map(Arc::from(res))
         }
-    };
-    any
+    }
 }
 
 pub fn from_yattrs_opt(attr: &Option<YAttributes>) -> Option<Box<Attrs>> {

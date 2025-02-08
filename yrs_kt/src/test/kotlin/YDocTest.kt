@@ -14,12 +14,28 @@ class YDocTest {
         val prev = snapshot(d1)
         text.insert(5u, " world")
 
-        val state = encodeStateFromSnapshotV1(d1, prev)
+        val state = encodeStateFromSnapshotV2(d1, prev)
 
         val d2 = YDoc(YDocOptions(2u))
         val txt2 = d2.getText("text")
-        applyUpdate(d2, state)
+        applyUpdateV2(d2, state)
 
+        assertEquals(txt2.getText(), "hello")
+    }
+
+    @Test
+    fun TestStateAsUpdateDefault() {
+        val d1 = YDoc(YDocOptions(1u, gc = false))
+
+        val text = d1.getText("text")
+        text.insert(0u, "hello")
+
+        val state = encodeStateAsUpdateV2(d1)
+
+        val d2 = YDoc(YDocOptions(2u))
+        applyUpdateV2(d2, state)
+
+        val txt2 = d2.getText("text")
         assertEquals(txt2.getText(), "hello")
     }
 

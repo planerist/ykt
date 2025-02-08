@@ -188,6 +188,11 @@ impl YTransaction {
         sv.encode_v1()
     }
 
+    pub fn state_vector_v2(&self) -> Vec<u8> {
+        let sv = self.get_inner().borrow().state_vector();
+        sv.encode_v2()
+    }
+
     /// Encodes all updates that have happened since a given version `vector` into a compact delta
     /// representation using lib0 v1 encoding. If `vector` parameter has not been provided, generated
     /// delta payload will contain all changes of a current ywasm document, working effectively as

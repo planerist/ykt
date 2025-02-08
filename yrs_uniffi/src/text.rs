@@ -1,4 +1,4 @@
-use crate::attrs::{into_yattrs, into_yvalue, parse_attrs, YAttributes};
+use crate::attrs::{into_yattrs, into_yvalue, parse_attrs, YAttributes, YValue};
 use crate::collection::SharedCollection;
 use crate::delta::{y_into_delta, YDelta};
 use crate::delta::YDelta::YInsert;
@@ -255,7 +255,7 @@ impl YText {
                         let d = YInsert(into_yvalue(&any), attrs);
                         array.push(d);
                     } else {
-                        // TODO: error?
+                        return Err(Error::InvalidData(d.insert.to_string(txn)))
                     }
                 }
                 Ok(array)

@@ -255,7 +255,7 @@ impl YText {
                         let d = YInsert(into_yvalue(&any), attrs);
                         array.push(d);
                     } else {
-                        // TODO: panic? error?
+                        // TODO: error?
                     }
                 }
                 Ok(array)

@@ -1,4 +1,5 @@
 use crate::tools;
+use crate::tools::Error;
 use crate::tools::Result;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -72,13 +73,15 @@ impl YTransactionInner {
     /// Triggers a post-update series of operations without `free`ing the transaction. This includes
     /// compaction and optimization of internal representation of updates, triggering events etc.
     /// Ypy transactions are auto-committed when they are `free`d.
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> Result() {
         if !self.committed {
             self.deref_mut().commit();
             self.committed = true;
-            unsafe { ManuallyDrop::drop(&mut self.inner) }
+            unsafe { ManuallyDrop::drop(&mut self.inner) };
+
+            Ok(())
         } else {
-            panic!("Transaction already committed!");
+            Err(Error::TxnCommitted)
         }
     }
 }

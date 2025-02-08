@@ -17,6 +17,8 @@ pub(crate) enum Error {
     InvalidTransactionCtx,
     #[error("shared collection has been destroyed")]
     RefDisposed,
+    #[error("transaction is already committed")]
+    TxnCommitted,
     #[error("another transaction is in progress")]
     AnotherTx,
     #[error("another read-write transaction is in progress")]

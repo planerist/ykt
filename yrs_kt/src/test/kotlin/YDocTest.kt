@@ -1,5 +1,6 @@
 import com.planerist.ykt.*
 import com.planerist.ykt.YDelta.YInsert
+import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -124,5 +125,31 @@ class YDocTest {
                 YInsert(YValue.String("orld"), mapOf("bold" to YValue.Bool(true))),
             ), text.toDelta()
         )
+    }
+
+    @Test
+    fun TestToString() {
+        val doc = YDoc()
+        val text = doc.getText("text")
+        text.insert(0u, "hello")
+        text.insert(5u, " world", "{\"bold\":true}")
+
+        val delta = text.getText()
+        assertEquals(
+            "hello world", delta
+        )
+    }
+
+    @Test
+    fun TestInvalidOpTest() {
+        val doc = YDoc()
+        val text = doc.getText("text")
+        text.insert(0u, "hello")
+
+        assertThrows<InternalException> { text.delete(4u, 3u) }
+        assertEquals("hell", text.getText())
+
+        text.insert(5u, " world")
+        assertEquals("hell world", text.getText())
     }
 }

@@ -73,7 +73,7 @@ impl YTransactionInner {
     /// Triggers a post-update series of operations without `free`ing the transaction. This includes
     /// compaction and optimization of internal representation of updates, triggering events etc.
     /// Ypy transactions are auto-committed when they are `free`d.
-    pub fn commit(&mut self) -> Result() {
+    pub fn commit(&mut self) -> Result<()> {
         if !self.committed {
             self.deref_mut().commit();
             self.committed = true;

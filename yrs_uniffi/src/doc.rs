@@ -1,12 +1,12 @@
 use crate::collection::SharedCollection;
 use crate::text::YText;
+use crate::tools::Error;
+use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::ops::Deref;
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_DOC;
 use yrs::{Doc, OffsetKind, Options, Transact};
-use crate::tools::Error;
-use crate::tools::Result;
 
 /// A ywasm document type. Documents are most important units of collaborative resources management.
 /// All shared collections live within a scope of their corresponding documents. All updates are
@@ -60,9 +60,7 @@ impl YDoc {
     pub fn new(options: Option<YDocOptions>) -> Self {
         let mut opt = Options::default();
 
-        if crate::tools::is_wasm() {
-            opt.offset_kind = OffsetKind::Utf16;
-        }
+        opt.offset_kind = crate::tools::offset_kind();
 
         if let Some(o) = options {
             o.fill(&mut opt);
@@ -140,7 +138,8 @@ impl YDoc {
             self.try_transact_mut_with(yrs::Origin::from(origin))
         } else {
             self.try_transact_mut()
-        }.map_err(|_| Error::AnotherRwTx)?;
+        }
+        .map_err(|_| Error::AnotherRwTx)?;
 
         Ok(YTransaction::from(inner))
     }
@@ -177,6 +176,9 @@ pub struct YDocOptions {
 
     #[uniffi(default = None)]
     pub should_load: Option<bool>,
+
+    #[uniffi(default = None)]
+    pub bytes_offset: Option<bool>,
 }
 
 impl YDocOptions {
@@ -192,6 +194,13 @@ impl YDocOptions {
         }
         if let Some(value) = self.gc {
             options.skip_gc = !value;
+        }
+        if let Some(bytes_offset) = self.bytes_offset {
+            options.offset_kind = if bytes_offset {
+                OffsetKind::Bytes
+            } else {
+                OffsetKind::Utf16
+            };
         }
         if let Some(value) = self.auto_load {
             options.auto_load = value;

@@ -1,15 +1,17 @@
 use crate::tools;
 use thiserror::Error;
+use yrs::OffsetKind;
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn is_wasm() -> bool {
-    true
+pub(crate) fn offset_kind() -> OffsetKind {
+    OffsetKind::Bytes
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn is_wasm() -> bool {
-    false
+pub(crate) fn offset_kind() -> OffsetKind {
+    OffsetKind::Utf16
 }
+
 
 #[derive(uniffi::Error, Error, Debug)]
 pub(crate) enum Error {

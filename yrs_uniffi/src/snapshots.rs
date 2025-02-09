@@ -6,7 +6,11 @@ use std::ops::Deref;
 use std::sync::Arc;
 use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1, EncoderV2};
-use yrs::{ReadTxn, StateVector, Transact, Update};
+use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
+
+#[derive(uniffi::Object)]
+#[repr(transparent)]
+pub struct YStateVector(pub(crate) StateVector);
 
 /// Encodes a state vector of a given ywasm document into its binary representation using lib0 v1
 /// encoding. State vector is a compact representation of updates performed on a given document and
@@ -40,6 +44,30 @@ pub fn encode_state_vector2(doc: &YDoc) -> Result<Vec<u8>> {
     let txn = doc.0.try_transact().map_err(|_| Error::AnotherRwTx)?;
     let bytes = txn.state_vector().encode_v2();
     Ok(bytes)
+}
+
+#[uniffi::export(default(vector=None))]
+fn decode_state_vector(vector: Option<Vec<u8>>) -> Result<YStateVector> {
+    if let Some(v) = vector {
+        match StateVector::decode_v1(v.as_slice()) {
+            Ok(sv) => Ok(YStateVector(sv)),
+            Err(e) => Err(Error::InvalidData(e.to_string())),
+        }
+    } else {
+        Ok(YStateVector(StateVector::default()))
+    }
+}
+
+#[uniffi::export(default(vector=None))]
+fn decode_state_vector2(vector: Option<Vec<u8>>) -> Result<YStateVector> {
+    if let Some(v) = vector {
+        match StateVector::decode_v2(v.as_slice()) {
+            Ok(sv) => Ok(YStateVector(sv)),
+            Err(e) => Err(Error::InvalidData(e.to_string())),
+        }
+    } else {
+        Ok(YStateVector(StateVector::default()))
+    }
 }
 
 /// Returns a string dump representation of a given `update` encoded using lib0 v1 encoding.
@@ -82,10 +110,14 @@ pub fn debug_update_v2(update: &[u8]) -> Result<String> {
 /// applyUpdate(localDoc, remoteDelta)
 /// ```
 #[uniffi::export(default(vector=None))]
-pub fn encode_state_as_update(doc: &YDoc, vector: Option<Vec<u8>>) -> Result<Vec<u8>> {
+pub fn encode_state_as_update(doc: &YDoc, vector: Option<Arc<YStateVector>>) -> Result<Vec<u8>> {
     let txn = doc.0.try_transact().map_err(|_| Error::AnotherRwTx)?;
-    let sv = state_vector_from_vec(vector)?;
-    let bytes = txn.encode_state_as_update_v1(&sv);
+    let sv = if let Some(vector) = vector {
+        &vector.clone().0
+    } else {
+        &StateVector::default()
+    };
+    let bytes = txn.encode_state_as_update_v1(sv);
     Ok(bytes)
 }
 
@@ -110,33 +142,15 @@ pub fn encode_state_as_update(doc: &YDoc, vector: Option<Vec<u8>>) -> Result<Vec
 /// applyUpdate(localDoc, remoteDelta)
 /// ```
 #[uniffi::export(default(vector=None))]
-pub fn encode_state_as_update_v2(doc: &YDoc, vector: Option<Vec<u8>>) -> Result<Vec<u8>> {
+pub fn encode_state_as_update_v2(doc: &YDoc, vector: Option<Arc<YStateVector>>) -> Result<Vec<u8>> {
     let txn = doc.0.try_transact().map_err(|_| Error::AnotherRwTx)?;
-    let sv = state_vector_from_vec2(vector)?;
-    let bytes = txn.encode_state_as_update_v2(&sv);
+    let sv = if let Some(vector) = vector {
+        &vector.clone().0
+    } else {
+        &StateVector::default()
+    };
+    let bytes = txn.encode_state_as_update_v2(sv);
     Ok(bytes)
-}
-
-fn state_vector_from_vec(vector: Option<Vec<u8>>) -> Result<StateVector> {
-    if let Some(v) = vector {
-        match StateVector::decode_v1(v.as_slice()) {
-            Ok(sv) => Ok(sv),
-            Err(e) => Err(Error::InvalidData(e.to_string())),
-        }
-    } else {
-        Ok(StateVector::default())
-    }
-}
-
-fn state_vector_from_vec2(vector: Option<Vec<u8>>) -> Result<StateVector> {
-    if let Some(v) = vector {
-        match StateVector::decode_v2(v.as_slice()) {
-            Ok(sv) => Ok(sv),
-            Err(e) => Err(Error::InvalidData(e.to_string())),
-        }
-    } else {
-        Ok(StateVector::default())
-    }
 }
 
 

@@ -3,8 +3,9 @@
 Ykt is a Kotlin binding for [Y-CRDT](https://github.com/y-crdt/). It provides distributed data types that enable real-time collaboration between devices. Ykt can sync data with any other platform that has a Y-CRDT binding, allowing for seamless cross-domain communication. The library is a thin wrapper around Yrs, taking advantage of the safety and performance of Rust.
 
 ## Disclaimer
+Although this project is still a work in progress, I successfully use it in my own projects. It fully supports all YText capabilities, including deltas, formatting, and transactions.
 
-I just started this bindings for my project, so they seem incomplete yet.
+Built on top of the mature Yrs framework, it offers a stable foundation. The primary limitation at this stage is the incomplete API, not stability or performance.
 
 ## Getting Started
 
@@ -15,6 +16,13 @@ Project organization:
 - [yrs_uniffi](yrs_uniffi) is uniffi bindings for yrs
 - [yrs_kt](yrs_kt) is Kotlin wrapper and basic tests for yrs_uniffi
 
+## Build Artifacts
+Check GitHub Actions for JAR artifacts. Currently supported platforms include:
+
+- Darwin (macOS): aarch64 & x86_64
+- Linux: x86_64
+
+Additional target platforms can be added with ease.
 
 ## What is implemented / TODO list
 

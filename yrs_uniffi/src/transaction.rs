@@ -152,7 +152,7 @@ impl YTransaction {
     /// ywasm transactions are auto-committed when they are `free`d.
     #[uniffi::method]
     pub fn commit(&self) -> Result<()> {
-        self.get_inner().borrow_mut().commit();
+        self.get_inner().borrow_mut().commit()?;
         Ok(())
     }
 

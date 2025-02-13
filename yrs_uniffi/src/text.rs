@@ -264,7 +264,7 @@ impl YText {
     }
 
     #[uniffi::method(default(txn=None))]
-    pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<Vec<u8>> {
+    pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<()> {
         match self.get_inner().borrow_mut().deref_mut() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
@@ -277,7 +277,7 @@ impl YText {
                 }
                 c.apply_delta(txn, result);
 
-                Ok(txn.encode_update_v2())
+                Ok(())
             }),
         }
     }

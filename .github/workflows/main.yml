@@ -102,7 +102,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name:  uniffi-darwin-x86_64
+          name: uniffi-darwin-x86_64
           path: yrs_kt/src/main/resources/darwin-x86-64/
 
       - uses: actions/download-artifact@v4

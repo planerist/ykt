@@ -19,7 +19,7 @@ toolchainManagement {
     }
 }
 
-val kotlinVersion = "2.1.0"
+val kotlinVersion = "2.1.21"
 
 dependencyResolutionManagement {
     versionCatalogs {

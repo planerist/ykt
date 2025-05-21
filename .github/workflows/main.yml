@@ -14,10 +14,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@v
         with:
           toolchain: stable
           override: true
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: install Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -82,7 +82,7 @@ jobs:
     needs: [build-yrs_uniffi-linux, build-yrs_uniffi-macos]
     steps:
       - name: checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: install Rust toolchain
         uses: actions-rs/toolchain@v1

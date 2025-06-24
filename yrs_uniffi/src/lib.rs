@@ -6,5 +6,9 @@ mod text;
 mod tools;
 mod transaction;
 mod delta;
+mod xml_frag;
+mod xml_elem;
+mod xml_text;
+mod xml;
 
 uniffi::setup_scaffolding!();

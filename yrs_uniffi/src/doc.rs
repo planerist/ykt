@@ -166,7 +166,7 @@ impl YDoc {
     /// onto `YXmlFragment` instance.
     pub fn get_xml_fragment(&self, name: &str) -> YXmlFragment {
         let shared_ref = self.get_or_insert_xml_fragment(name);
-        YXmlFragment(SharedCollection::integrated(shared_ref, self.0.clone()))
+        YXmlFragment::new_with_collection(SharedCollection::integrated(shared_ref, self.0.clone()))
     }
 }
 

@@ -1,6 +1,4 @@
 import com.planerist.ykt.*
-import com.planerist.ykt.YDelta.YInsert
-import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -9,16 +7,22 @@ class YXmlTest {
     fun TestSnapshotState() {
         val d1 = YDoc(YDocOptions(1u, gc = false))
 
-        val text = d1.getText("xml")
-        d1.transaction().use {
-                        root.push(new Y.YXmlElement('p', {}, [
-                new Y.YXmlText('hello')
-            ]), txn)
-            root.push(new Y.YXmlText('world'), txn)
+        val xml: YXmlFragment = d1.getXmlFragment("xml")
+        d1.transaction().use { txn ->
+            xml.push(
+                YXmlChild.Element(
+                    YXmlElement(
+                        "p", emptyMap(),
+                        listOf(YXmlChild.Text(YXmlText("hello", emptyMap())))
+                    )
+                ),
+                txn
+            )
+
+            xml.push(YXmlChild.Text(YXmlText("world", emptyMap())), txn)
         }
 
-        const s = root.toString()
-        t.compareStrings(s, '<p>hello</p>world')
-
+        val xmlStr = xml.toString(null)
+        assertEquals("<p>hello</p>world", xmlStr)
     }
 }

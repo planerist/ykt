@@ -8,7 +8,7 @@ use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use yrs::types::{Attrs, Delta, TYPE_REFS_TEXT};
 use yrs::{GetString, Out, Snapshot, Text, TextRef};
 
@@ -28,7 +28,7 @@ use yrs::{GetString, Out, Snapshot, Text, TextRef};
 #[derive(uniffi::Object)]
 #[repr(transparent)]
 pub struct YText {
-    inner: Arc<RefCell<SharedCollection<String, TextRef>>>,
+    inner: RwLock<SharedCollection<String, TextRef>>,
 }
 
 unsafe impl Sync for YText {}
@@ -37,12 +37,8 @@ unsafe impl Send for YText {}
 impl YText {
     pub fn new(init: SharedCollection<String, TextRef>) -> Self {
         YText {
-            inner: Arc::new(RefCell::new(init)),
+            inner: RwLock::new(init),
         }
-    }
-
-    pub fn get_inner(&self) -> Arc<RefCell<SharedCollection<String, TextRef>>> {
-        self.inner.clone()
     }
 }
 
@@ -57,9 +53,9 @@ impl YText {
     #[uniffi::constructor]
     pub fn new_with_text(init: Option<String>) -> Self {
         YText {
-            inner: Arc::new(RefCell::new(SharedCollection::prelim(
+            inner: RwLock::new(SharedCollection::prelim(
                 init.unwrap_or_default(),
-            ))),
+            )),
         }
     }
 
@@ -75,7 +71,7 @@ impl YText {
     /// document store and cannot be nested again: attempt to do so will result in an exception.
     #[inline]
     pub fn prelim(&self) -> bool {
-        self.get_inner().borrow().is_prelim()
+        self.inner.read().unwrap().is_prelim()
     }
 
     /// Checks if current YArray reference is alive and has not been deleted by its parent collection.
@@ -83,14 +79,14 @@ impl YText {
     /// type is preliminary (has not been integrated into document).
     #[inline]
     pub fn alive(&self, txn: &YTransaction) -> bool {
-        self.get_inner().borrow().is_alive(txn)
+        self.inner.read().unwrap().is_alive(txn)
     }
 
     /// Returns length of an underlying string stored in this `YText` instance,
     /// understood as a number of UTF-8 encoded bytes.
     #[uniffi::method(default(txn=None))]
     pub fn length(&self, txn: Option<Arc<YTransaction>>) -> Result<u32> {
-        match self.get_inner().borrow().deref() {
+        match self.inner.read().unwrap().deref() {
             SharedCollection::Prelim(c) => Ok(c.len() as u32),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
         }
@@ -99,7 +95,7 @@ impl YText {
     /// Returns an underlying shared string stored in this data type.
     #[uniffi::method(default(txn=None))]
     pub fn get_text(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {
-        match self.get_inner().borrow().deref() {
+        match self.inner.read().unwrap().deref() {
             SharedCollection::Prelim(c) => Ok(c.clone()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.get_string(txn))),
         }
@@ -120,7 +116,7 @@ impl YText {
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
 
-        match self.get_inner().borrow_mut().deref_mut() {
+        match self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(c) => {
                 if let None = attributes {
                     c.insert_str(index as usize, chunk);
@@ -157,7 +153,7 @@ impl YText {
             None => return Err(Error::InvalidFmt),
         };
 
-        match &self.get_inner().borrow_mut().deref_mut() {
+        match &self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
                 c.format(txn, index, length, attrs);
@@ -180,7 +176,7 @@ impl YText {
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
 
-        match self.get_inner().borrow_mut().deref_mut() {
+        match self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(ref mut c) => {
                 if let Some(_) = attributes {
                     Err(Error::InvalidPrelimOp)
@@ -206,7 +202,7 @@ impl YText {
     /// Both `index` and `length` are counted in terms of a number of UTF-8 character bytes.
     #[uniffi::method(default(txn=None))]
     pub fn delete(&self, index: u32, length: u32, txn: Option<Arc<YTransaction>>) -> Result<()> {
-        match self.get_inner().borrow_mut().deref_mut() {
+        match self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(ref mut c) => {
                 c.drain((index as usize)..((index + length) as usize));
                 Ok(())
@@ -226,7 +222,7 @@ impl YText {
         prev_snapshot: Option<Arc<YSnapshot>>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Vec<YDelta>> {
-        match self.get_inner().borrow_mut().deref_mut() {
+        match self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
                 let hi: Option<Snapshot> = if let Some(snap) = snapshot {
@@ -265,7 +261,7 @@ impl YText {
 
     #[uniffi::method(default(txn=None))]
     pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<()> {
-        match self.get_inner().borrow_mut().deref_mut() {
+        match self.inner.write().unwrap().deref_mut() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }

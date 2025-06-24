@@ -25,4 +25,47 @@ class YXmlTest {
         val xmlStr = xml.toString(null)
         assertEquals("<p>hello</p>world", xmlStr)
     }
+
+
+    @Test
+    fun TestAttributes() {
+        val doc = YDoc(YDocOptions(1u, gc = false))
+        val root = doc.getXmlFragment("test")
+        val xml = YXmlElement("div", emptyMap(), emptyList())
+
+        root.push(YXmlChild.Element(xml))
+
+        var actual: Map<String, String?> = doc.transaction().use { txn ->
+            // Test setting and getting attributes
+            xml.setAttribute("key1", "value1", txn)
+            xml.setAttribute("key2", "value2", txn)
+
+            // Get all attributes and convert them to a map
+            xml.attributes(txn)
+        }
+
+        assertEquals(
+            mapOf(
+                "key1" to "value1",
+                "key2" to "value2"
+            ), actual
+        )
+
+        // Test removing attribute
+        actual = doc.transaction().use { txn ->
+            xml.removeAttribute("key1", txn)
+
+            mapOf(
+                "key1" to xml.getAttribute("key1", txn),
+                "key2" to xml.getAttribute("key2", txn)
+            )
+        }
+
+        assertEquals(
+            mapOf(
+                "key1" to null,
+                "key2" to "value2"
+            ), actual
+        )
+    }
 }

@@ -72,20 +72,20 @@ impl Prelim for YXmlChild {
                 let xml_element = XmlElementRef::from(inner_ref);
                 let old_value = std::mem::replace(
                     &mut cell,
-                    Arc::new(YXmlElement(SharedCollection::Integrated(Integrated::new(
+                    Arc::new(YXmlElement(RwLock::new(SharedCollection::Integrated(Integrated::new(
                         xml_element.clone(),
                         doc,
-                    )))),
+                    ))))),
                 );
 
-                if let YXmlElement(SharedCollection::Prelim(raw)) = old_value.clone().deref() {
+                if let SharedCollection::Prelim(raw) = old_value.0.write().unwrap().deref_mut() {
                     for child in &raw.children {
                         xml_element.push_back(txn, child.clone());
                     }
                     for (name, value) in &raw.attributes {
                         xml_element.insert_attribute(txn, name.clone(), value);
                     }
-                }
+                };
             }
             YXmlChild::Fragment(mut cell) => {
                 let xml_fragment = XmlFragmentRef::from(inner_ref);
@@ -111,7 +111,7 @@ impl Prelim for YXmlChild {
 impl YXmlChild {
     pub fn from_xml(value: XmlOut, doc: Doc) -> Self {
         match value {
-            XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(SharedCollection::integrated(v, doc)))),
+            XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(RwLock::new(SharedCollection::integrated(v, doc))))),
             XmlOut::Fragment(v) => YXmlChild::Fragment(Arc::new(YXmlFragment::new_with_collection(SharedCollection::integrated(v, doc)))),
             XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(SharedCollection::integrated(v, doc)))),
         }
@@ -134,7 +134,7 @@ impl YXmlChild {
     fn type_ref(&self, txn: &TransactionMut) -> TypeRef {
         match self {
             YXmlChild::Element(v) => {
-                let name = match &v.0 {
+                let name = match &v.0.read().unwrap().deref(){
                     SharedCollection::Integrated(_) => panic!("{}", Error::NotPrelim),
                     SharedCollection::Prelim(p) => Arc::from(p.name.as_str()),
                 };

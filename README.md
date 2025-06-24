@@ -54,7 +54,7 @@ This project source is based on the y-crdt ywasm project source.
 - [ ] YMap
 - [ ] YUndoManager
 - [ ] YWeakLink
-- [ ] YXmlElement, YXmlFragment, YXmlText
+- [x] YXmlElement, YXmlFragment, YXmlText
 - [ ] Review & simplify Error 
 - [ ] YOutput: support all types (currently only str is supported)
 

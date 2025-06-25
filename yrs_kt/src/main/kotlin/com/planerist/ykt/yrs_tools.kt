@@ -21,10 +21,10 @@ fun createFragment(
     return YXmlChild.Fragment(YXmlFragment(children))
 }
 
-fun YXmlChild.getText(txn: YTransaction?) {
+fun YXmlChild.toText(txn: YTransaction?) {
     when(this) {
-        is YXmlChild.Element -> this.v1.getText(txn)
-        is YXmlChild.Fragment -> this.v1.getText(txn)
-        is YXmlChild.Text -> this.v1.getText(txn)
+        is YXmlChild.Element -> this.v1.toText(txn)
+        is YXmlChild.Fragment -> this.v1.toText(txn)
+        is YXmlChild.Text -> this.v1.toText(txn)
     }
 }

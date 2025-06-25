@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::collection::{Integrated, SharedCollection};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
@@ -13,14 +14,7 @@ use yrs::{GetString, TransactionMut, XmlElementRef, XmlFragment, XmlFragmentRef}
 /// element - in this case the attributes and the nodeName are not shared
 #[derive(uniffi::Object)]
 #[repr(transparent)]
-pub struct YXmlFragment(pub(crate) RwLock<SharedCollection<Vec<YXmlChild>, XmlFragmentRef>>);
-
-impl Clone for YXmlFragment {
-    fn clone(&self) -> Self {
-        let cloned = self.0.read().unwrap().clone();
-        YXmlFragment(RwLock::new(cloned))
-    }
-}
+pub struct YXmlFragment(pub(crate)  Arc<RefCell<SharedCollection<Vec<YXmlChild>, XmlFragmentRef>>>);
 
 unsafe impl Sync for YXmlFragment {}
 unsafe impl Send for YXmlFragment {}
@@ -28,14 +22,14 @@ unsafe impl Send for YXmlFragment {}
 
 impl YXmlFragment {
     pub fn new_with_collection(init: SharedCollection<Vec<YXmlChild>, XmlFragmentRef>) -> Self {
-        YXmlFragment(RwLock::new(init))
+        YXmlFragment(Arc::new(RefCell::new(init)))
     }
 
     pub fn integrate(&self, txn: &mut TransactionMut, xml_fragment: XmlFragmentRef) {
         let doc = txn.doc().clone();
 
         let old_value = {
-            let mut guard = self.0.write().unwrap();
+            let mut guard = self.0.borrow_mut();
             mem::replace(&mut *guard, SharedCollection::Integrated(Integrated::new(
                 xml_fragment.clone(),
                 doc,
@@ -76,7 +70,7 @@ impl YXmlFragment {
     /// document store and cannot be nested again: attempt to do so will result in an exception.
     #[inline]
     pub fn prelim(&self) -> bool {
-        self.0.read().unwrap().is_prelim()
+        self.0.borrow().is_prelim()
     }
 
     /// Checks if current shared type reference is alive and has not been deleted by its parent collection.
@@ -84,13 +78,13 @@ impl YXmlFragment {
     /// type is preliminary (has not been integrated into document).
     #[inline]
     pub fn alive(&self, txn: &YTransaction) -> bool {
-        self.0.read().unwrap().is_alive(txn)
+        self.0.borrow().is_alive(txn)
     }
 
     /// Returns a number of child XML nodes stored within this `YXMlElement` instance.
     #[uniffi::method(default(txn=None))]
     pub fn length(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<u32> {
-        match self.0.read().unwrap().deref() {
+        match self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.len() as u32),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
         }
@@ -105,7 +99,7 @@ impl YXmlFragment {
     ) -> crate::tools::Result<()> {
         xml_node.assert_xml_prelim()?;
 
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.insert(index as usize, xml_node);
                 Ok(())
@@ -122,7 +116,7 @@ impl YXmlFragment {
                 txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         xml_node.assert_xml_prelim()?;
 
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.push(xml_node);
                 Ok(())
@@ -142,7 +136,7 @@ impl YXmlFragment {
         txn: Option<Arc<YTransaction>>,
     ) -> crate::tools::Result<()> {
         let length = length.unwrap_or(1);
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.drain((index as usize)..((index + length) as usize));
                 Ok(())
@@ -158,7 +152,7 @@ impl YXmlFragment {
     /// It can be either `YXmlElement`, `YXmlText` or `undefined` if current node has not children.
     #[uniffi::method(default(txn=None))]
     pub fn first_child(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match self.0.read().unwrap().deref() {
+        match self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(match c.first() {
                 None => None,
                 Some(found) => Some(found.clone())
@@ -171,9 +165,9 @@ impl YXmlFragment {
     }
 
     /// Returns a string representation of this XML node.
-    #[uniffi::method(name = "getText", default(txn=None))]
+    #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => {
                 let mut str = String::new();
                 for child in c.iter() {

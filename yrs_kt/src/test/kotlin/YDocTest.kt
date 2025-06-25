@@ -21,7 +21,7 @@ class YDocTest {
         val txt2 = d2.getText("text")
         applyUpdateV2(d2, state)
 
-        assertEquals(txt2.getText(), "hello")
+        assertEquals(txt2.toText(), "hello")
     }
 
     @Test
@@ -37,7 +37,7 @@ class YDocTest {
         applyUpdateV2(d2, state)
 
         val txt2 = d2.getText("text")
-        assertEquals(txt2.getText(), "hello")
+        assertEquals(txt2.toText(), "hello")
     }
 
     @Test
@@ -175,7 +175,7 @@ class YDocTest {
         text.insert(0u, "hello")
         text.insert(5u, " world", "{\"bold\":true}")
 
-        val delta = text.getText()
+        val delta = text.toText()
         assertEquals(
             "hello world", delta
         )
@@ -188,9 +188,9 @@ class YDocTest {
         text.insert(0u, "hello")
 
         assertThrows<InternalException> { text.delete(4u, 3u) }
-        assertEquals("hell", text.getText())
+        assertEquals("hell", text.toText())
 
         text.insert(5u, " world")
-        assertEquals("hell world", text.getText())
+        assertEquals("hell world", text.toText())
     }
 }

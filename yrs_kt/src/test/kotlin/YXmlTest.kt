@@ -24,7 +24,7 @@ class YXmlTest {
             xml.push(YXmlChild.Text(YXmlText("world", emptyMap())), txn)
         }
 
-        val xmlStr = xml.getText(null)
+        val xmlStr = xml.toText(null)
         assertEquals("<p>hello</p>world", xmlStr)
     }
 
@@ -97,10 +97,10 @@ class YXmlTest {
 
         // Test nextSibling
         val second = (first.v1.nextSibling() as YXmlChild.Text).v1
-        assertEquals("world", second.getText(null))
+        assertEquals("world", second.toText(null))
         assertEquals(null, second.nextSibling())
 
         // Compare prevSibling with first element
-        assertEquals(first.getText(null), second.prevSibling()?.getText(null))
+        assertEquals(first.toText(null), second.prevSibling()?.toText(null))
     }
 }

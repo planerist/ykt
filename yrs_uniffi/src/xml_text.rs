@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use crate::collection::{Integrated, SharedCollection};
 use crate::text::YText;
 use crate::tools::Error;
@@ -9,8 +10,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::types::TYPE_REFS_XML_TEXT;
 use yrs::{GetString, Text, TransactionMut, Xml, XmlTextRef};
-use yrs::block::Prelim;
-use yrs::branch::BranchPtr;
 
 #[derive(Clone)]
 pub(crate) struct PrelimXmlText {
@@ -19,27 +18,25 @@ pub(crate) struct PrelimXmlText {
 }
 
 #[derive(uniffi::Object)]
-pub struct YXmlText(pub(crate) RwLock<SharedCollection<PrelimXmlText, XmlTextRef>>);
+#[repr(transparent)]
+pub struct YXmlText(pub(crate) Arc<RefCell<SharedCollection<PrelimXmlText, XmlTextRef>>>);
 
-impl Clone for YXmlText {
-    fn clone(&self) -> Self {
-        let cloned = self.0.read().unwrap().clone();
-        YXmlText(RwLock::new(cloned))
-    }
-}
+unsafe impl Sync for YXmlText {}
+unsafe impl Send for YXmlText {}
+
 
 impl YXmlText {
     pub fn integrate(&self, txn: &mut TransactionMut, xml_text: XmlTextRef) {
         let doc = txn.doc().clone();
 
         let old_value = {
-            let mut guard = self.0.write().unwrap();
+            let mut guard = self.0.borrow_mut();
             mem::replace(&mut *guard, SharedCollection::Integrated(Integrated::new(
                 xml_text.clone(),
                 doc,
             )))
         };
-        
+
         if let SharedCollection::Prelim(raw) = old_value {
             xml_text.insert(txn, 0, &raw.text);
             for (name, value) in &raw.attributes {
@@ -53,10 +50,10 @@ impl YXmlText {
 impl YXmlText {
     #[uniffi::constructor(default(attributes=None))]
     pub fn new(text: String, attributes: Option<HashMap<String, String>>) -> Self {
-        YXmlText(RwLock::new(SharedCollection::prelim(PrelimXmlText {
+        YXmlText(Arc::new(RefCell::new(SharedCollection::prelim(PrelimXmlText {
             text: text,
             attributes: attributes.unwrap_or_default(),
-        })))
+        }))))
     }
 
     #[inline]
@@ -71,7 +68,7 @@ impl YXmlText {
     /// document store and cannot be nested again: attempt to do so will result in an exception.
     #[inline]
     pub fn prelim(&self) -> bool {
-        self.0.read().unwrap().is_prelim()
+        self.0.borrow().is_prelim()
     }
 
     /// Checks if current shared type reference is alive and has not been deleted by its parent collection.
@@ -79,14 +76,14 @@ impl YXmlText {
     /// type is preliminary (has not been integrated into document).
     #[inline]
     pub fn alive(&self, txn: &YTransaction) -> bool {
-        self.0.read().unwrap().is_alive(txn)
+        self.0.borrow().is_alive(txn)
     }
 
     /// Returns length of an underlying string stored in this `YXmlText` instance,
     /// understood as a number of UTF-8 encoded bytes.
     #[uniffi::method(default(txn=None))]
     pub fn length(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<u32> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.text.len() as u32),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
         }
@@ -103,7 +100,7 @@ impl YXmlText {
         chunk: &str,
         attributes: Option<HashMap<String, String>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 if let None = attributes {
                     c.text.insert_str(index as usize, chunk);
@@ -141,7 +138,7 @@ impl YXmlText {
         };
         let attrs = YText::convert_attrs(attrs);
 
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -162,7 +159,7 @@ impl YXmlText {
         chunk: &str,
         attributes: Option<HashMap<String, String>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 if let None = attributes {
                     c.text.push_str(chunk);
@@ -194,7 +191,7 @@ impl YXmlText {
         index: u32,
         length: u32,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.text.drain((index as usize)..((index + length) as usize));
                 Ok(())
@@ -211,7 +208,7 @@ impl YXmlText {
     /// parent XML node.
     #[uniffi::method(default(txn=None))]
     pub fn next_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -230,7 +227,7 @@ impl YXmlText {
     /// of parent XML node.
     #[uniffi::method(default(txn=None))]
     pub fn prev_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -247,7 +244,7 @@ impl YXmlText {
     /// Returns a parent `YXmlElement` node or `undefined` if current node has no parent assigned.
     #[uniffi::method(default(txn=None))]
     pub fn parent(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -258,9 +255,9 @@ impl YXmlText {
         }
     }
 
-    #[uniffi::method(name = "getText", default(txn=None))]
+    #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.text.to_string()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.get_string(txn))),
         }
@@ -274,7 +271,7 @@ impl YXmlText {
         name: &str,
         value: &str,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.attributes.insert(name.to_string(), value.to_string());
                 Ok(())
@@ -290,7 +287,7 @@ impl YXmlText {
     /// `null` will be returned.
     #[uniffi::method(default(txn=None))]
     pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<String>> {
-        let value = match &self.0.read().unwrap().deref() {
+        let value = match &self.0.borrow().deref() {
             SharedCollection::Integrated(c) => {
                 c.readonly(txn, |c, txn| Ok(c.get_attribute(txn, name)))?
             }
@@ -306,7 +303,7 @@ impl YXmlText {
         &self,
         name: String,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.attributes.remove(&name);
                 Ok(())
@@ -322,7 +319,7 @@ impl YXmlText {
     /// unspecified order.
     #[uniffi::method(default(txn=None))]
     pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, String>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.attributes.clone()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
                 let mut map = HashMap::new();

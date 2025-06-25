@@ -1,16 +1,16 @@
-use std::collections::HashMap;
-use crate::collection::{Integrated, SharedCollection};
+use crate::collection::SharedCollection;
 use crate::tools::Error;
 use crate::xml_elem::YXmlElement;
 use crate::xml_frag::YXmlFragment;
 use crate::xml_text::YXmlText;
-use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
+use std::cell::RefCell;
+use std::ops::Deref;
+use std::sync::Arc;
 use yrs::block::{ItemContent, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::xml::XmlPrelim;
 use yrs::types::TypeRef;
-use yrs::{Doc, Text, TransactionMut, Xml, XmlElementRef, XmlFragment, XmlFragmentRef, XmlOut, XmlTextRef};
+use yrs::{Doc, Text, TransactionMut, XmlElementRef, XmlFragmentRef, XmlOut, XmlTextRef};
 
 #[derive(uniffi::Enum)]
 #[derive(Clone)]
@@ -54,9 +54,9 @@ impl Prelim for YXmlChild {
 impl YXmlChild {
     pub fn from_xml(value: XmlOut, doc: Doc) -> Self {
         match value {
-            XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(RwLock::new(SharedCollection::integrated(v, doc))))),
+            XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(Arc::new(RefCell::new(SharedCollection::integrated(v, doc)))))),
             XmlOut::Fragment(v) => YXmlChild::Fragment(Arc::new(YXmlFragment::new_with_collection(SharedCollection::integrated(v, doc)))),
-            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(RwLock::new(SharedCollection::integrated(v, doc))))),
+            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(Arc::new(RefCell::new((SharedCollection::integrated(v, doc))))))),
         }
     }
 
@@ -77,7 +77,7 @@ impl YXmlChild {
     fn type_ref(&self, txn: &TransactionMut) -> TypeRef {
         match self {
             YXmlChild::Element(v) => {
-                let name = match &v.0.read().unwrap().deref() {
+                let name = match &v.0.borrow().deref() {
                     SharedCollection::Integrated(_) => panic!("{}", Error::NotPrelim),
                     SharedCollection::Prelim(p) => Arc::from(p.name.as_str()),
                 };

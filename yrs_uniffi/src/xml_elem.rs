@@ -2,12 +2,13 @@ use crate::collection::{Integrated, SharedCollection};
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
+use crate::xml_frag::YXmlFragment;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
-use yrs::{GetString, TransactionMut, Xml, XmlElementRef, XmlFragment, XmlTextRef};
-use crate::xml_text::YXmlText;
+use yrs::{GetString, TransactionMut, Xml, XmlElementRef, XmlFragment};
 
 impl Clone for PrelimXmElement {
     fn clone(&self) -> Self {
@@ -56,14 +57,10 @@ impl PrelimXmElement {
 ///   using interleave-resistant algorithm, where order of concurrent inserts at the same index
 ///   is established using peer's document id seniority.
 #[derive(uniffi::Object)]
-pub struct YXmlElement(pub(crate) RwLock<SharedCollection<PrelimXmElement, XmlElementRef>>);
+pub struct YXmlElement(pub(crate) Arc<RefCell<SharedCollection<PrelimXmElement, XmlElementRef>>>);
 
-impl Clone for YXmlElement {
-    fn clone(&self) -> Self {
-        let cloned = self.0.read().unwrap().clone();
-        YXmlElement(RwLock::new(cloned))
-    }
-}
+unsafe impl Sync for YXmlElement {}
+unsafe impl Send for YXmlElement {}
 
 
 impl YXmlElement {
@@ -71,7 +68,7 @@ impl YXmlElement {
         let doc = txn.doc().clone();
 
         let old_value = {
-            let mut guard = self.0.write().unwrap();
+            let mut guard = self.0.borrow_mut();
             mem::replace(&mut *guard, SharedCollection::Integrated(Integrated::new(
                 xml_element.clone(),
                 doc,
@@ -99,11 +96,11 @@ impl YXmlElement {
         for child in c.iter() {
             child.assert_xml_prelim()?;
         }
-        Ok(YXmlElement(RwLock::new(SharedCollection::prelim(PrelimXmElement {
+        Ok(YXmlElement(Arc::new(RefCell::new(SharedCollection::prelim(PrelimXmElement {
             name,
             attributes: attributes.unwrap_or_default(),
             children: c,
-        }))))
+        })))))
     }
 
     /// Returns true if this is a preliminary instance of `YXmlElement`.
@@ -113,7 +110,7 @@ impl YXmlElement {
     /// document store and cannot be nested again: attempt to do so will result in an exception.
     #[inline]
     pub fn prelim(&self) -> bool {
-        self.0.read().unwrap().is_prelim()
+        self.0.borrow().is_prelim()
     }
 
     /// Checks if current shared type reference is alive and has not been deleted by its parent collection.
@@ -121,13 +118,13 @@ impl YXmlElement {
     /// type is preliminary (has not been integrated into document).
     #[inline]
     pub fn alive(&self, txn: &YTransaction) -> bool {
-        self.0.read().unwrap().is_alive(txn)
+        self.0.borrow().is_alive(txn)
     }
 
     /// Returns a tag name of this XML node.
     #[uniffi::method(default(txn=None))]
     pub fn name(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.name.clone()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, _| Ok(c.tag().to_string())),
         }
@@ -136,7 +133,7 @@ impl YXmlElement {
     /// Returns a number of child XML nodes stored within this `YXMlElement` instance.
     #[uniffi::method(default(txn=None))]
     pub fn length(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<u32> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.children.len() as u32),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
         }
@@ -150,7 +147,7 @@ impl YXmlElement {
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         xml_node.assert_xml_prelim()?;
 
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.children.insert(index as usize, xml_node);
                 Ok(())
@@ -166,7 +163,7 @@ impl YXmlElement {
     pub fn push(&self, xml_node: YXmlChild, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         xml_node.assert_xml_prelim()?;
 
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.children.push(xml_node);
                 Ok(())
@@ -185,7 +182,7 @@ impl YXmlElement {
         length: Option<u32>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         let length = length.unwrap_or(1);
-        match self.0.write().unwrap().deref_mut() {
+        match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.children
                     .drain((index as usize)..((index + length) as usize));
@@ -202,7 +199,7 @@ impl YXmlElement {
     /// It can be either `YXmlElement`, `YXmlText` or `undefined` if current node has not children.
     #[uniffi::method(default(txn=None))]
     pub fn first_child(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => {
                 Ok(c.children.first().cloned())
             }
@@ -218,7 +215,7 @@ impl YXmlElement {
     /// parent XML node.
     #[uniffi::method(default(txn=None))]
     pub fn next_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -237,7 +234,7 @@ impl YXmlElement {
     /// of parent XML node.
     #[uniffi::method(default(txn=None))]
     pub fn prev_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -254,7 +251,7 @@ impl YXmlElement {
     /// Returns a parent `YXmlElement` node or `undefined` if current node has no parent assigned.
     #[uniffi::method(default(txn=None))]
     pub fn parent(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
             }
@@ -265,9 +262,9 @@ impl YXmlElement {
         }
     }
 
-    #[uniffi::method(name = "getText", default(txn=None))]
+    #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => c.to_string(txn),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.get_string(txn))),
         }
@@ -282,7 +279,7 @@ impl YXmlElement {
         value: &str,
         txn: Option<Arc<YTransaction>>)
         -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.attributes.insert(name.to_string(), value.to_string());
                 Ok(())
@@ -298,7 +295,7 @@ impl YXmlElement {
     /// `null` will be returned.
     #[uniffi::method(default(txn=None))]
     pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<String>> {
-        let value = match &self.0.read().unwrap().deref() {
+        let value = match &self.0.borrow().deref() {
             SharedCollection::Integrated(c) => {
                 c.readonly(txn, |c, txn| Ok(c.get_attribute(txn, name)))?
             }
@@ -314,7 +311,7 @@ impl YXmlElement {
         &self,
         name: String,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        match &mut self.0.write().unwrap().deref_mut() {
+        match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.attributes.remove(&name);
                 Ok(())
@@ -330,7 +327,7 @@ impl YXmlElement {
     /// unspecified order.
     #[uniffi::method(default(txn=None))]
     pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, String>> {
-        match &self.0.read().unwrap().deref() {
+        match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.clone().attributes),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
                 let mut map = HashMap::new();

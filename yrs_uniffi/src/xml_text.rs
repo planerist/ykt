@@ -1,13 +1,16 @@
-use crate::collection::SharedCollection;
+use crate::collection::{Integrated, SharedCollection};
 use crate::text::YText;
 use crate::tools::Error;
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
 use std::collections::HashMap;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::types::TYPE_REFS_XML_TEXT;
-use yrs::{GetString, Text, Xml, XmlTextRef};
+use yrs::{GetString, Text, TransactionMut, Xml, XmlTextRef};
+use yrs::block::Prelim;
+use yrs::branch::BranchPtr;
 
 #[derive(Clone)]
 pub(crate) struct PrelimXmlText {
@@ -22,6 +25,27 @@ impl Clone for YXmlText {
     fn clone(&self) -> Self {
         let cloned = self.0.read().unwrap().clone();
         YXmlText(RwLock::new(cloned))
+    }
+}
+
+impl YXmlText {
+    pub fn integrate(&self, txn: &mut TransactionMut, xml_text: XmlTextRef) {
+        let doc = txn.doc().clone();
+
+        let old_value = {
+            let mut guard = self.0.write().unwrap();
+            mem::replace(&mut *guard, SharedCollection::Integrated(Integrated::new(
+                xml_text.clone(),
+                doc,
+            )))
+        };
+        
+        if let SharedCollection::Prelim(raw) = old_value {
+            xml_text.insert(txn, 0, &raw.text);
+            for (name, value) in &raw.attributes {
+                xml_text.insert_attribute(txn, name.clone(), value);
+            }
+        }
     }
 }
 
@@ -234,7 +258,7 @@ impl YXmlText {
         }
     }
 
-    #[uniffi::method(name = "toString", default(txn=None))]
+    #[uniffi::method(name = "getText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
         match &self.0.read().unwrap().deref() {
             SharedCollection::Prelim(c) => Ok(c.text.to_string()),

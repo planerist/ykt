@@ -26,22 +26,6 @@ impl XmlPrelim for YXmlChild {}
 impl Prelim for YXmlChild {
     type Return = XmlOut;
 
-    // fn into_content(self, _txn: &mut TransactionMut) -> (ItemContent, Option<Self>) {
-    //     let type_ref = match &self {
-    //         YXmlChild::Text(_) => TypeRef::XmlText,
-    //         YXmlChild::Element(prelim) => {
-    //             match prelim.0 {
-    //                 SharedCollection::Integrated(integrated) => TypeRef::XmlElement(integrated.tag.clone()),
-    //                 SharedCollection::Prelim(p) => TypeRef::XmlElement(p.name),
-    //             }
-    //             
-    //         },
-    //         YXmlChild::Fragment(_) => TypeRef::XmlFragment,
-    //     };
-    //     
-    //     (ItemContent::Type(Branch::new(type_ref)), Some(self))
-    // }
-
     fn into_content(self, txn: &mut TransactionMut) -> (ItemContent, Option<Self>) {
         let type_ref = self.type_ref(txn);
         let branch = Branch::new(type_ref);
@@ -51,64 +35,17 @@ impl Prelim for YXmlChild {
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
         let doc = txn.doc().clone();
         match self {
-            YXmlChild::Text(mut cell) => {
-                println!("Integrating: Text");
-
+            YXmlChild::Text(cell) => {
                 let xml_text = XmlTextRef::from(inner_ref);
-                let old_value = std::mem::replace(
-                    &mut cell,
-                    Arc::new(YXmlText(RwLock::new(SharedCollection::Integrated(Integrated::new(
-                        xml_text.clone(),
-                        doc,
-                    ))))),
-                );
-
-                if let SharedCollection::Prelim(raw) = old_value.clone().0.read().unwrap().deref() {
-                    xml_text.insert(txn, 0, &raw.text);
-                    for (name, value) in &raw.attributes {
-                        xml_text.insert_attribute(txn, name.clone(), value);
-                    }
-                }
+                cell.clone().integrate(txn, xml_text);
             }
             YXmlChild::Element(mut cell) => {
-                println!("Integrating: Element");
-
                 let xml_element = XmlElementRef::from(inner_ref);
-                let old_value = std::mem::replace(
-                    &mut cell,
-                    Arc::new(YXmlElement(RwLock::new(SharedCollection::Integrated(Integrated::new(
-                        xml_element.clone(),
-                        doc,
-                    ))))),
-                );
-
-                if let SharedCollection::Prelim(raw) = old_value.0.read().unwrap().deref() {
-                    for child in raw.children.clone() {
-                        xml_element.push_back(txn, child);
-                    }
-                    for (name, value) in &raw.attributes {
-                        xml_element.insert_attribute(txn, name.clone(), value);
-                    }
-                };
+                cell.clone().integrate(txn, xml_element);
             }
             YXmlChild::Fragment(mut cell) => {
-                println!("Integrating: Fragment");
-
                 let xml_fragment = XmlFragmentRef::from(inner_ref);
-                let old_value = std::mem::replace(
-                    &mut cell,
-                    Arc::new(YXmlFragment(RwLock::new(SharedCollection::Integrated(Integrated::new(
-                        xml_fragment.clone(),
-                        doc,
-                    ))))),
-                );
-
-                if let SharedCollection::Prelim(raw) = old_value.0.read().unwrap().deref()
-                {
-                    for child in raw {
-                        xml_fragment.push_back(txn, child.clone());
-                    }
-                };
+                cell.clone().integrate(txn, xml_fragment);
             }
         }
     }

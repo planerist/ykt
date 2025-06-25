@@ -20,3 +20,11 @@ fun createFragment(
 ): YXmlChild.Fragment {
     return YXmlChild.Fragment(YXmlFragment(children))
 }
+
+fun YXmlChild.getText(txn: YTransaction?) {
+    when(this) {
+        is YXmlChild.Element -> this.v1.getText(txn)
+        is YXmlChild.Fragment -> this.v1.getText(txn)
+        is YXmlChild.Text -> this.v1.getText(txn)
+    }
+}

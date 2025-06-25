@@ -1,11 +1,11 @@
-use crate::collection::SharedCollection;
-use crate::tools::Error;
+use crate::collection::{Integrated, SharedCollection};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
+use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::types::TYPE_REFS_XML_FRAGMENT;
-use yrs::{GetString, XmlFragment, XmlFragmentRef};
+use yrs::{GetString, TransactionMut, XmlElementRef, XmlFragment, XmlFragmentRef};
 
 /// Represents a list of `YXmlElement` and `YXmlText` types.
 /// A `YXmlFragment` is similar to a `YXmlElement`, but it does not have a
@@ -29,6 +29,25 @@ unsafe impl Send for YXmlFragment {}
 impl YXmlFragment {
     pub fn new_with_collection(init: SharedCollection<Vec<YXmlChild>, XmlFragmentRef>) -> Self {
         YXmlFragment(RwLock::new(init))
+    }
+
+    pub fn integrate(&self, txn: &mut TransactionMut, xml_fragment: XmlFragmentRef) {
+        let doc = txn.doc().clone();
+
+        let old_value = {
+            let mut guard = self.0.write().unwrap();
+            mem::replace(&mut *guard, SharedCollection::Integrated(Integrated::new(
+                xml_fragment.clone(),
+                doc,
+            )))
+        };
+
+        if let SharedCollection::Prelim(raw) = old_value
+        {
+            for child in raw {
+                xml_fragment.push_back(txn, child.clone());
+            }
+        };
     }
 }
 
@@ -152,8 +171,8 @@ impl YXmlFragment {
     }
 
     /// Returns a string representation of this XML node.
-    #[uniffi::method(name="toString", default(txn=None))]
-    pub fn to_string(&self, txn: Option<Arc<YTransaction>>)  ->  crate::tools::Result<String> {
+    #[uniffi::method(name = "getText", default(txn=None))]
+    pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
         match &self.0.read().unwrap().deref() {
             SharedCollection::Prelim(c) => {
                 let mut str = String::new();

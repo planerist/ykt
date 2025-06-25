@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::{GetString, Xml, XmlElementRef, XmlFragment};
-use crate::xml_frag::YXmlFragment;
 
 impl Clone for PrelimXmElement {
     fn clone(&self) -> Self {
@@ -67,15 +66,17 @@ impl Clone for YXmlElement {
 
 #[uniffi::export]
 impl YXmlElement {
-    #[uniffi::constructor]
-    pub fn new(name: String, attributes: HashMap<String, String>, children: Vec<YXmlChild>) -> Result<YXmlElement> {
-        for child in children.iter() {
+    #[uniffi::constructor(default(attributes=None, children=None))]
+    pub fn new(name: String, attributes: Option<HashMap<String, String>>, children: Option<Vec<YXmlChild>>) -> Result<YXmlElement> {
+        let c = children.unwrap_or_default();
+
+        for child in c.iter() {
             child.assert_xml_prelim()?;
         }
         Ok(YXmlElement(RwLock::new(SharedCollection::prelim(PrelimXmElement {
             name,
-            attributes,
-            children,
+            attributes: attributes.unwrap_or_default(),
+            children: c,
         }))))
     }
 
@@ -121,9 +122,8 @@ impl YXmlElement {
         index: u32,
         xml_node: YXmlChild,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
-        
         xml_node.assert_xml_prelim()?;
-        
+
         match self.0.write().unwrap().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.children.insert(index as usize, xml_node);
@@ -139,7 +139,7 @@ impl YXmlElement {
     #[uniffi::method(default(txn=None))]
     pub fn push(&self, xml_node: YXmlChild, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         xml_node.assert_xml_prelim()?;
-        
+
         match self.0.write().unwrap().deref_mut() {
             SharedCollection::Prelim(c) => {
                 c.children.push(xml_node);
@@ -278,7 +278,7 @@ impl YXmlElement {
             }
             SharedCollection::Prelim(c) => c.attributes.get(name).cloned(),
         };
-        
+
         Ok(value)
     }
 
@@ -307,7 +307,7 @@ impl YXmlElement {
         match &self.0.read().unwrap().deref() {
             SharedCollection::Prelim(c) => Ok(c.clone().attributes),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
-                let mut map =  HashMap::new();
+                let mut map = HashMap::new();
                 for (name, value) in c.attributes(txn) {
                     map.insert(name.to_string(), value);
                 }

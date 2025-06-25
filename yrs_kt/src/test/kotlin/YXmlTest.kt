@@ -1,6 +1,8 @@
 import com.planerist.ykt.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class YXmlTest {
     @Test
@@ -76,22 +78,25 @@ class YXmlTest {
 
         // Create and insert elements in a transaction
         val first = d1.transaction().use { txn ->
-            val a = YXmlElement(
+            val p = createElement(
                 "p",
                 emptyMap(),
-                listOf(YXmlChild.Text(YXmlText("hello", emptyMap())))
+                listOf(YXmlChild.Text(YXmlText("hello")))
             )
-            root.push(YXmlChild.Element(a), txn)
-            root.push(YXmlChild.Text(YXmlText("world", emptyMap())), txn)
-            
-            a
+            assertTrue(p.v1.prelim())
+
+            root.push(p, txn)
+            root.push(createText("world"), txn)
+
+            p
         }
 
+        assertFalse(first.v1.prelim())
         // Test prevSibling
-        assertEquals(null, first.prevSibling())
+        assertEquals(null, first.v1.prevSibling())
 
         // Test nextSibling
-        val second = (first.nextSibling() as YXmlChild.Text).v1
+        val second = (first.v1.nextSibling() as YXmlChild.Text).v1
         assertEquals("world", second.toString())
         assertEquals(null, second.nextSibling())
 

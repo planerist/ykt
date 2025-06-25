@@ -1,14 +1,13 @@
 use crate::collection::SharedCollection;
+use crate::text::YText;
+use crate::tools::Error;
 use crate::transaction::YTransaction;
+use crate::xml::YXmlChild;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::types::TYPE_REFS_XML_TEXT;
 use yrs::{GetString, Text, Xml, XmlTextRef};
-use crate::text::YText;
-use crate::tools::Error;
-use crate::xml::YXmlChild;
-use crate::xml_elem::YXmlElement;
 
 #[derive(Clone)]
 pub(crate) struct PrelimXmlText {
@@ -28,12 +27,12 @@ impl Clone for YXmlText {
 
 #[uniffi::export]
 impl YXmlText {
-    #[uniffi::constructor]
-    pub fn new(text: Option<String>, attributes: HashMap<String, String>) -> crate::tools::Result<YXmlText> {
-        Ok(YXmlText(RwLock::new(SharedCollection::prelim(PrelimXmlText {
-            text: text.unwrap_or_default(),
-            attributes,
-        }))))
+    #[uniffi::constructor(default(attributes=None))]
+    pub fn new(text: String, attributes: Option<HashMap<String, String>>) -> Self {
+        YXmlText(RwLock::new(SharedCollection::prelim(PrelimXmlText {
+            text: text,
+            attributes: attributes.unwrap_or_default(),
+        })))
     }
 
     #[inline]
@@ -117,7 +116,7 @@ impl YXmlText {
             None => return Err(Error::InvalidFmt)
         };
         let attrs = YText::convert_attrs(attrs);
-        
+
         match &mut self.0.write().unwrap().deref_mut() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
@@ -273,7 +272,7 @@ impl YXmlText {
             }
             SharedCollection::Prelim(c) => c.attributes.get(name).cloned(),
         };
-        
+
         Ok(value)
     }
 
@@ -306,7 +305,7 @@ impl YXmlText {
                 for (name, value) in c.attributes(txn) {
                     map.insert(name.to_string(), value);
                 };
-                
+
                 Ok(map)
             }),
         }

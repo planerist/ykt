@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::collection::{Integrated, SharedCollection};
 use crate::tools::Error;
 use crate::xml_elem::YXmlElement;
@@ -18,6 +19,7 @@ pub enum YXmlChild {
     Fragment(Arc<YXmlFragment>),
     Text(Arc<YXmlText>),
 }
+
 
 impl XmlPrelim for YXmlChild {}
 
@@ -48,9 +50,10 @@ impl Prelim for YXmlChild {
 
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
         let doc = txn.doc().clone();
-
         match self {
             YXmlChild::Text(mut cell) => {
+                println!("Integrating: Text");
+
                 let xml_text = XmlTextRef::from(inner_ref);
                 let old_value = std::mem::replace(
                     &mut cell,
@@ -60,7 +63,7 @@ impl Prelim for YXmlChild {
                     ))))),
                 );
 
-                if let SharedCollection::Prelim(raw) = old_value.clone().0.write().unwrap().deref_mut() {
+                if let SharedCollection::Prelim(raw) = old_value.clone().0.read().unwrap().deref() {
                     xml_text.insert(txn, 0, &raw.text);
                     for (name, value) in &raw.attributes {
                         xml_text.insert_attribute(txn, name.clone(), value);
@@ -68,6 +71,8 @@ impl Prelim for YXmlChild {
                 }
             }
             YXmlChild::Element(mut cell) => {
+                println!("Integrating: Element");
+
                 let xml_element = XmlElementRef::from(inner_ref);
                 let old_value = std::mem::replace(
                     &mut cell,
@@ -77,9 +82,9 @@ impl Prelim for YXmlChild {
                     ))))),
                 );
 
-                if let SharedCollection::Prelim(raw) = old_value.0.write().unwrap().deref_mut() {
-                    for child in &raw.children {
-                        xml_element.push_back(txn, child.clone());
+                if let SharedCollection::Prelim(raw) = old_value.0.read().unwrap().deref() {
+                    for child in raw.children.clone() {
+                        xml_element.push_back(txn, child);
                     }
                     for (name, value) in &raw.attributes {
                         xml_element.insert_attribute(txn, name.clone(), value);
@@ -87,6 +92,8 @@ impl Prelim for YXmlChild {
                 };
             }
             YXmlChild::Fragment(mut cell) => {
+                println!("Integrating: Fragment");
+
                 let xml_fragment = XmlFragmentRef::from(inner_ref);
                 let old_value = std::mem::replace(
                     &mut cell,
@@ -96,7 +103,7 @@ impl Prelim for YXmlChild {
                     ))))),
                 );
 
-                if let SharedCollection::Prelim(raw) = old_value.0.write().unwrap().deref_mut()
+                if let SharedCollection::Prelim(raw) = old_value.0.read().unwrap().deref()
                 {
                     for child in raw {
                         xml_fragment.push_back(txn, child.clone());

@@ -1,16 +1,16 @@
-use crate::attrs::{into_yattrs, into_yvalue, parse_attrs, YAttributes, YValue};
+use crate::attrs::{into_yattrs, into_yvalue, parse_attrs};
 use crate::collection::SharedCollection;
-use crate::delta::{y_into_delta, YDelta};
 use crate::delta::YDelta::YInsert;
-use crate::snapshots::{snapshot, YSnapshot};
+use crate::delta::{y_into_delta, YDelta};
+use crate::snapshots::YSnapshot;
 use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
-use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
-use yrs::types::{Attrs, Delta, TYPE_REFS_TEXT};
-use yrs::{GetString, Out, Snapshot, Text, TextRef};
+use yrs::types::{Attrs, TYPE_REFS_TEXT};
+use yrs::{Any, GetString, Out, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -251,7 +251,7 @@ impl YText {
                         let d = YInsert(into_yvalue(&any), attrs);
                         array.push(d);
                     } else {
-                        return Err(Error::InvalidData(d.insert.to_string(txn)))
+                        return Err(Error::InvalidData(d.insert.to_string(txn)));
                     }
                 }
                 Ok(array)
@@ -276,5 +276,17 @@ impl YText {
                 Ok(())
             }),
         }
+    }
+}
+
+impl YText {
+    pub(crate) fn convert_attrs(attrs: HashMap<String, String>) -> Attrs {
+        let mut map = Attrs::new();
+
+        for (k, v) in attrs.iter() {
+            map.insert(Arc::from(k.as_str()), Any::String(Arc::from(v.as_str())));
+        };
+
+        map
     }
 }

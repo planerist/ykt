@@ -1,16 +1,15 @@
-use std::ops::{Deref, DerefMut};
 use crate::collection::{Integrated, SharedCollection};
 use crate::tools::Error;
 use crate::xml_elem::YXmlElement;
 use crate::xml_frag::YXmlFragment;
 use crate::xml_text::YXmlText;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 use yrs::block::{ItemContent, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::xml::XmlPrelim;
 use yrs::types::TypeRef;
 use yrs::{Doc, Text, TransactionMut, Xml, XmlElementRef, XmlFragment, XmlFragmentRef, XmlOut, XmlTextRef};
-use crate::transaction::YTransaction;
 
 #[derive(uniffi::Enum)]
 #[derive(Clone)]
@@ -55,13 +54,13 @@ impl Prelim for YXmlChild {
                 let xml_text = XmlTextRef::from(inner_ref);
                 let old_value = std::mem::replace(
                     &mut cell,
-                    Arc::new(YXmlText(SharedCollection::Integrated(Integrated::new(
+                    Arc::new(YXmlText(RwLock::new(SharedCollection::Integrated(Integrated::new(
                         xml_text.clone(),
                         doc,
-                    )))),
+                    ))))),
                 );
 
-                if let YXmlText(SharedCollection::Prelim(raw)) = old_value.clone().deref(){
+                if let SharedCollection::Prelim(raw) = old_value.clone().0.write().unwrap().deref_mut() {
                     xml_text.insert(txn, 0, &raw.text);
                     for (name, value) in &raw.attributes {
                         xml_text.insert_attribute(txn, name.clone(), value);
@@ -97,7 +96,7 @@ impl Prelim for YXmlChild {
                     ))))),
                 );
 
-                if let SharedCollection::Prelim(raw) =  old_value.0.write().unwrap().deref_mut()
+                if let SharedCollection::Prelim(raw) = old_value.0.write().unwrap().deref_mut()
                 {
                     for child in raw {
                         xml_fragment.push_back(txn, child.clone());
@@ -113,7 +112,7 @@ impl YXmlChild {
         match value {
             XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(RwLock::new(SharedCollection::integrated(v, doc))))),
             XmlOut::Fragment(v) => YXmlChild::Fragment(Arc::new(YXmlFragment::new_with_collection(SharedCollection::integrated(v, doc)))),
-            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(SharedCollection::integrated(v, doc)))),
+            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(RwLock::new(SharedCollection::integrated(v, doc))))),
         }
     }
 
@@ -134,7 +133,7 @@ impl YXmlChild {
     fn type_ref(&self, txn: &TransactionMut) -> TypeRef {
         match self {
             YXmlChild::Element(v) => {
-                let name = match &v.0.read().unwrap().deref(){
+                let name = match &v.0.read().unwrap().deref() {
                     SharedCollection::Integrated(_) => panic!("{}", Error::NotPrelim),
                     SharedCollection::Prelim(p) => Arc::from(p.name.as_str()),
                 };

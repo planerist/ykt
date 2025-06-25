@@ -1,11 +1,11 @@
 use crate::collection::SharedCollection;
-use crate::tools::Result;
+use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
-use yrs::{GetString, Xml, XmlElementRef};
+use yrs::{GetString, Xml, XmlElementRef, XmlFragment};
 use crate::xml_frag::YXmlFragment;
 
 impl Clone for PrelimXmElement {
@@ -87,6 +87,156 @@ impl YXmlElement {
     #[inline]
     pub fn prelim(&self) -> bool {
         self.0.read().unwrap().is_prelim()
+    }
+
+    /// Checks if current shared type reference is alive and has not been deleted by its parent collection.
+    /// This method only works on already integrated shared types and will return false is current
+    /// type is preliminary (has not been integrated into document).
+    #[inline]
+    pub fn alive(&self, txn: &YTransaction) -> bool {
+        self.0.read().unwrap().is_alive(txn)
+    }
+
+    /// Returns a tag name of this XML node.
+    #[uniffi::method(default(txn=None))]
+    pub fn name(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<String> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(c) => Ok(c.name.clone()),
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, _| Ok(c.tag().to_string())),
+        }
+    }
+
+    /// Returns a number of child XML nodes stored within this `YXMlElement` instance.
+    #[uniffi::method(default(txn=None))]
+    pub fn length(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<u32> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(c) => Ok(c.children.len() as u32),
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
+        }
+    }
+
+    #[uniffi::method(default(txn=None))]
+    pub fn insert(
+        &self,
+        index: u32,
+        xml_node: YXmlChild,
+        txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
+        
+        xml_node.assert_xml_prelim()?;
+        
+        match self.0.write().unwrap().deref_mut() {
+            SharedCollection::Prelim(c) => {
+                c.children.insert(index as usize, xml_node);
+                Ok(())
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                c.insert(txn, index, xml_node);
+                Ok(())
+            }),
+        }
+    }
+
+    #[uniffi::method(default(txn=None))]
+    pub fn push(&self, xml_node: YXmlChild, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
+        xml_node.assert_xml_prelim()?;
+        
+        match self.0.write().unwrap().deref_mut() {
+            SharedCollection::Prelim(c) => {
+                c.children.push(xml_node);
+                Ok(())
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                c.push_back(txn, xml_node);
+                Ok(())
+            }),
+        }
+    }
+
+    #[uniffi::method(default(txn=None))]
+    pub fn delete(
+        &self,
+        index: u32,
+        length: Option<u32>,
+        txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
+        let length = length.unwrap_or(1);
+        match self.0.write().unwrap().deref_mut() {
+            SharedCollection::Prelim(c) => {
+                c.children
+                    .drain((index as usize)..((index + length) as usize));
+                Ok(())
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                c.remove_range(txn, index, length);
+                Ok(())
+            }),
+        }
+    }
+
+    /// Returns a first child of this XML node.
+    /// It can be either `YXmlElement`, `YXmlText` or `undefined` if current node has not children.
+    #[uniffi::method(default(txn=None))]
+    pub fn first_child(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(c) => {
+                Ok(c.children.first().cloned())
+            }
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| match c.first_child() {
+                None => Ok(None),
+                Some(xml) => Ok(YXmlChild::from_xml(xml, txn.doc().clone()).into()),
+            }),
+        }
+    }
+
+    /// Returns a next XML sibling node of this XMl node.
+    /// It can be either `YXmlElement`, `YXmlText` or `undefined` if current node is a last child of
+    /// parent XML node.
+    #[uniffi::method(default(txn=None))]
+    pub fn next_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
+                let next = c.siblings(txn).next();
+                match next {
+                    Some(node) => Ok(YXmlChild::from_xml(node, txn.doc().clone()).into()),
+                    None => Ok(None),
+                }
+            }),
+        }
+    }
+
+    /// Returns a previous XML sibling node of this XMl node.
+    /// It can be either `YXmlElement`, `YXmlText` or `undefined` if current node is a first child
+    /// of parent XML node.
+    #[uniffi::method(default(txn=None))]
+    pub fn prev_sibling(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
+                let next = c.siblings(txn).next_back();
+                match next {
+                    Some(node) => Ok(YXmlChild::from_xml(node, txn.doc().clone()).into()),
+                    None => Ok(None),
+                }
+            }),
+        }
+    }
+
+    /// Returns a parent `YXmlElement` node or `undefined` if current node has no parent assigned.
+    #[uniffi::method(default(txn=None))]
+    pub fn parent(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YXmlChild>> {
+        match &self.0.read().unwrap().deref() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| match c.parent() {
+                None => Ok(None),
+                Some(node) => Ok(YXmlChild::from_xml(node, txn.doc().clone()).into()),
+            }),
+        }
     }
 
     #[uniffi::method(name = "toString", default(txn=None))]

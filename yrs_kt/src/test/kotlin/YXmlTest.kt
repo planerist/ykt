@@ -68,4 +68,34 @@ class YXmlTest {
             ), actual
         )
     }
+
+    @Test
+    fun testSiblings() {
+        val d1 = YDoc(YDocOptions(1u, gc = false))
+        val root = d1.getXmlFragment("test")
+
+        // Create and insert elements in a transaction
+        val first = d1.transaction().use { txn ->
+            val a = YXmlElement(
+                "p",
+                emptyMap(),
+                listOf(YXmlChild.Text(YXmlText("hello", emptyMap())))
+            )
+            root.push(YXmlChild.Element(a), txn)
+            root.push(YXmlChild.Text(YXmlText("world", emptyMap())), txn)
+            
+            a
+        }
+
+        // Test prevSibling
+        assertEquals(null, first.prevSibling())
+
+        // Test nextSibling
+        val second = (first.nextSibling() as YXmlChild.Text).v1
+        assertEquals("world", second.toString())
+        assertEquals(null, second.nextSibling())
+
+        // Compare prevSibling with first element
+        assertEquals(first.toString(), second.prevSibling()?.toString())
+    }
 }

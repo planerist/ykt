@@ -33,7 +33,8 @@ pub(crate) enum Error {
     InvalidFmt,
     // InvalidXmlAttrs, //"given object cannot be used as XML attributes";
     // NotXmlType, //"provided object is not a valid XML shared type";
-    // NotPrelim, //"this operation only works on preliminary types";
+    #[error("this operation only works on preliminary types")]
+    NotPrelim, 
 
     #[error("invalid delta format")]
     InvalidDelta,

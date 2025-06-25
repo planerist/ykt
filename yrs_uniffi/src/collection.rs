@@ -4,6 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use yrs::{BranchID, Doc, Hook, ReadTxn, SharedRef, Transact, Transaction, TransactionMut};
 
+#[derive(Clone)]
 pub enum SharedCollection<P, S> {
     Integrated(Integrated<S>),
     Prelim(P),
@@ -65,6 +66,7 @@ impl<P, S: SharedRef + 'static> SharedCollection<P, S> {
     }
 }
 
+#[derive(Clone)]
 pub struct Integrated<S> {
     pub hook: Hook<S>,
     pub doc: Doc,

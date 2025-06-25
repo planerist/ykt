@@ -7,6 +7,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_DOC;
 use yrs::{Doc, OffsetKind, Options, Transact};
+use crate::xml_frag::YXmlFragment;
 
 /// A ywasm document type. Documents are most important units of collaborative resources management.
 /// All shared collections live within a scope of their corresponding documents. All updates are
@@ -154,6 +155,18 @@ impl YDoc {
     pub fn get_text(&self, name: &str) -> YText {
         let shared_ref = self.get_or_insert_text(name);
         YText::new(SharedCollection::integrated(shared_ref, self.0.clone()))
+    }
+
+    /// Returns a `YXmlFragment` shared data type, that's accessible for subsequent accesses using
+    /// given `name`.
+    ///
+    /// If there was no instance with this name before, it will be created and then returned.
+    ///
+    /// If there was an instance with this name, but it was of different type, it will be projected
+    /// onto `YXmlFragment` instance.
+    pub fn get_xml_fragment(&self, name: &str) -> YXmlFragment {
+        let shared_ref = self.get_or_insert_xml_fragment(name);
+        YXmlFragment::new_with_collection(SharedCollection::integrated(shared_ref, self.0.clone()))
     }
 }
 

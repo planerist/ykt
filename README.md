@@ -54,7 +54,11 @@ This project source is based on the y-crdt ywasm project source.
 - [ ] YMap
 - [ ] YUndoManager
 - [ ] YWeakLink
-- [ ] YXmlElement, YXmlFragment, YXmlText
+- [x] YXmlElement, YXmlFragment, YXmlText
+  - [ ] YXmlElement: tree_walker, observe, unobserve, observe_deep, observe_deep
+  - [ ] YXmlFragment: tree_walker, observe, unobserve, observe_deep, observe_deep
+  - [ ] YXmlEvent
+  - [ ] YXmlText: quote, to_delta, insert_embed, apply_delta, observe, unobserver, observe_deep
 - [ ] Review & simplify Error 
 - [ ] YOutput: support all types (currently only str is supported)
 

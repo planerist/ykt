@@ -223,7 +223,7 @@ impl YText {
         prev_snapshot: Option<Arc<YSnapshot>>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Vec<YDelta>> {
-        match self.inner.borrow_mut().deref_mut() {
+        match self.inner.borrow().deref() {
             SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
                 let hi: Option<Snapshot> = if let Some(snap) = snapshot {

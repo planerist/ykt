@@ -1,4 +1,5 @@
 import com.planerist.ykt.*
+import com.planerist.ykt.YDelta.YInsert
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -72,7 +73,37 @@ class YXmlTest {
     }
 
     @Test
-    fun testSiblings() {
+    fun TestXmlTextEmbed() {
+        val doc = YDoc(YDocOptions(1u, gc = false))
+        val xml = doc.getXmlFragment("test")
+
+        doc.transaction().use { txn ->
+            val text = createText("some text", mapOf("attr1" to "v1"))
+            // Test setting and getting attributes
+            xml.push(text, txn)
+            text.v1.insertEmbed(
+                text.v1.length(txn), createText("bold", mapOf("bold" to "true")),
+                null, txn
+            )
+        }
+
+        val xmlStr = xml.toText(null)
+        assertEquals(1u, xml.length())
+        val firstChild = xml.firstChild() as YXmlChild.Text
+        assertEquals("some text", firstChild.toText())
+        assertEquals(
+            listOf(
+                YInsert(YValue.String("some text"), null),
+                YInsert(YValue.String("bold"), mapOf("bold" to YValue.String("true"))),
+            ), firstChild.v1.toDelta()
+        )
+        assertEquals(
+            xmlStr, "some text"
+        )
+    }
+
+    @Test
+    fun TestSiblings() {
         val d1 = YDoc(YDocOptions(1u, gc = false))
         val root = d1.getXmlFragment("test")
 

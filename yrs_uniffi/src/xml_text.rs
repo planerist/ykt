@@ -1,15 +1,19 @@
-use std::cell::RefCell;
+use crate::attrs::{into_yattrs, into_yvalue, YValue};
 use crate::collection::{Integrated, SharedCollection};
+use crate::delta::YDelta;
+use crate::delta::YDelta::YInsert;
+use crate::snapshots::YSnapshot;
 use crate::text::YText;
 use crate::tools::Error;
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use yrs::types::TYPE_REFS_XML_TEXT;
-use yrs::{GetString, Text, TransactionMut, Xml, XmlTextRef};
+use yrs::{GetString, Out, Snapshot, Text, TransactionMut, Xml, XmlTextRef};
 
 #[derive(Clone)]
 pub(crate) struct PrelimXmlText {
@@ -115,6 +119,36 @@ impl YXmlText {
                     Ok(())
                 } else if let Some(attrs) = attributes {
                     c.insert_with_attributes(txn, index, chunk, YText::convert_attrs(attrs));
+                    Ok(())
+                } else {
+                    Err(Error::InvalidFmt)
+                }
+            }),
+        }
+    }
+
+    /// Inserts a given `embed` object into this `YXmlText` instance, starting at a given `index`.
+    ///
+    /// Optional object with defined `attributes` will be used to wrap provided `embed`
+    /// with a formatting blocks.`attributes` are only supported for a `YXmlText` instance which
+    /// already has been integrated into document store.
+    #[uniffi::method(default(txn=None))]
+    pub fn insert_embed(
+        &self,
+        index: u32,
+        embed: YXmlChild,
+        attributes: Option<HashMap<String, String>>,
+        txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
+        match &mut self.0.borrow_mut().deref_mut() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                if attributes.is_none() {
+                    c.insert_embed(txn, index, embed);
+                    Ok(())
+                } else if let Some(attrs) = attributes {
+                    c.insert_embed_with_attributes(txn, index, embed, YText::convert_attrs(attrs));
                     Ok(())
                 } else {
                     Err(Error::InvalidFmt)
@@ -328,6 +362,72 @@ impl YXmlText {
                 };
 
                 Ok(map)
+            }),
+        }
+    }
+
+    /// Returns the Delta representation of this YXmlText type.
+    #[uniffi::method(default(snapshot=None,prev_snapshot=None,txn=None))]
+    pub fn to_delta(
+        &self,
+        snapshot: Option<Arc<YSnapshot>>,
+        prev_snapshot: Option<Arc<YSnapshot>>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> crate::tools::Result<Vec<YDelta>> {
+        match self.0.borrow().deref() {
+            SharedCollection::Prelim(_) => {
+                Err(Error::InvalidPrelimOp)
+            }
+            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
+                let hi: Option<Snapshot> = if let Some(snap) = snapshot {
+                    let snap = snap.clone().deref().deref().clone();
+                    Some(snap)
+                } else {
+                    None
+                };
+                let lo: Option<Snapshot> = if let Some(snap) = prev_snapshot {
+                    let snap = snap.clone().deref().deref().clone();
+                    Some(snap)
+                } else {
+                    None
+                };
+
+                let delta = c.diff_range(txn, hi.as_ref(), lo.as_ref(), |change| change);
+
+                let mut array: Vec<YDelta> = vec![];
+                for d in delta {
+                    let attrs = match d.attributes {
+                        None => None,
+                        Some(attrs) => Some(into_yattrs(*attrs))
+                    };
+
+                    if let Out::Any(any) = d.insert {
+                        let d = YInsert(into_yvalue(&any), attrs);
+                        array.push(d);
+                    } else if let Out::YXmlText(textRef) = d.insert {
+                        let mut map = HashMap::new();
+                        for (name, value) in textRef.attributes(txn) {
+                            map.insert(name.to_string(), YValue::String(value));
+                        }
+
+                        let d = YInsert(YValue::String(textRef.get_string(txn)), Some(map));
+                        array.push(d);
+                    } else if let Out::YXmlElement(elementRef) = d.insert {
+                        let mut map = HashMap::new();
+                        for (name, value) in elementRef.attributes(txn) {
+                            map.insert(name.to_string(), YValue::String(value));
+                        }
+
+                        let d = YInsert(YValue::String(elementRef.get_string(txn)), Some(map));
+                        array.push(d);
+                    } else if let Out::YXmlFragment(fragmentRef) = d.insert {
+                        let d = YInsert(YValue::String(fragmentRef.get_string(txn)), None);
+                        array.push(d);
+                    } else {
+                        return Err(Error::InvalidData(d.insert.to_string(txn)));
+                    }
+                }
+                Ok(array)
             }),
         }
     }

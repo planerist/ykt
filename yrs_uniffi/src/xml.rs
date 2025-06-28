@@ -6,7 +6,7 @@ use crate::xml_text::YXmlText;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::sync::Arc;
-use yrs::block::{ItemContent, Prelim};
+use yrs::block::{EmbedPrelim, ItemContent, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::xml::XmlPrelim;
 use yrs::types::TypeRef;
@@ -22,6 +22,12 @@ pub enum YXmlChild {
 
 
 impl XmlPrelim for YXmlChild {}
+
+impl Into<EmbedPrelim<YXmlChild>> for YXmlChild {
+    fn into(self) -> EmbedPrelim<YXmlChild> {
+        EmbedPrelim::Shared(self)
+    }
+}
 
 impl Prelim for YXmlChild {
     type Return = XmlOut;

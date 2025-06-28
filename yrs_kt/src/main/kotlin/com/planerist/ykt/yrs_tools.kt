@@ -21,8 +21,8 @@ fun createFragment(
     return YXmlChild.Fragment(YXmlFragment(children))
 }
 
-fun YXmlChild.toText(txn: YTransaction?) {
-    when(this) {
+fun YXmlChild.toText(txn: YTransaction? = null) : String {
+    return when(this) {
         is YXmlChild.Element -> this.v1.toText(txn)
         is YXmlChild.Fragment -> this.v1.toText(txn)
         is YXmlChild.Text -> this.v1.toText(txn)

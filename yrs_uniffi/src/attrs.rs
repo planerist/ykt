@@ -37,6 +37,15 @@ fn into_yattrs2(attrs: &HashMap<String, Any>) -> YAttributes {
     result
 }
 
+fn into_yattrs3(attrs: &HashMap<String, Any>) -> YAttributes {
+    let mut result: YAttributes = HashMap::new();
+    for (k, v) in attrs {
+        result.insert(k.to_string(), into_yvalue(v));
+    }
+
+    result
+}
+
 pub fn into_yvalue(v: &Any) -> YValue {
     match v {
         Any::Null => YValue::Null,

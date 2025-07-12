@@ -1,14 +1,14 @@
+use crate::attrs::{into_yvalue, YValue};
 use crate::collection::{Integrated, SharedCollection};
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
-use crate::xml_frag::YXmlFragment;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
-use yrs::{GetString, TransactionMut, Xml, XmlElementRef, XmlFragment};
+use std::sync::Arc;
+use yrs::{Doc, GetString, Out, TransactionMut, Xml, XmlElementRef, XmlFragment};
 
 impl Clone for PrelimXmElement {
     fn clone(&self) -> Self {
@@ -22,7 +22,7 @@ impl Clone for PrelimXmElement {
 
 pub(crate) struct PrelimXmElement {
     pub name: String,
-    pub attributes: HashMap<String, String>,
+    pub attributes: HashMap<String, YValue>,
     pub children: Vec<YXmlChild>,
 }
 
@@ -64,6 +64,10 @@ unsafe impl Send for YXmlElement {}
 
 
 impl YXmlElement {
+    pub fn from_ref(elem_ref: XmlElementRef, doc: Doc) -> Self {
+        YXmlElement(Arc::new(RefCell::new(SharedCollection::integrated(elem_ref, doc))))
+    }
+    
     pub fn integrate(&self, txn: &mut TransactionMut, xml_element: XmlElementRef) {
         let doc = txn.doc().clone();
 
@@ -90,7 +94,7 @@ impl YXmlElement {
 #[uniffi::export]
 impl YXmlElement {
     #[uniffi::constructor(default(attributes=None, children=None))]
-    pub fn new(name: String, attributes: Option<HashMap<String, String>>, children: Option<Vec<YXmlChild>>) -> Result<YXmlElement> {
+    pub fn new(name: String, attributes: Option<HashMap<String, YValue>>, children: Option<Vec<YXmlChild>>) -> Result<YXmlElement> {
         let c = children.unwrap_or_default();
 
         for child in c.iter() {
@@ -276,12 +280,12 @@ impl YXmlElement {
     pub fn set_attribute(
         &self,
         name: &str,
-        value: &str,
+        value: YValue,
         txn: Option<Arc<YTransaction>>)
         -> crate::tools::Result<()> {
         match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
-                c.attributes.insert(name.to_string(), value.to_string());
+                c.attributes.insert(name.to_string(), value);
                 Ok(())
             }
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
@@ -294,15 +298,31 @@ impl YXmlElement {
     /// Returns a value of an attribute given its `name`. If no attribute with such name existed,
     /// `null` will be returned.
     #[uniffi::method(default(txn=None))]
-    pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<String>> {
-        let value = match &self.0.borrow().deref() {
+    pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YValue>> {
+       match &self.0.borrow().deref() {
             SharedCollection::Integrated(c) => {
-                c.readonly(txn, |c, txn| Ok(c.get_attribute(txn, name)))?
+                c.readonly(txn, |c, txn| {
+                    let out = c.get_attribute(txn, name);
+                    return match out {
+                        None => Ok(None),
+                        Some(out) => {
+                            if let Out::Any(attr) = out {
+                                Ok(Some(into_yvalue(&attr)))
+                            } else {
+                                return Err(Error::InvalidData("attr value".to_string()));
+                            }
+                        }
+                    }
+                })
             }
-            SharedCollection::Prelim(c) => c.attributes.get(name).cloned(),
-        };
-
-        Ok(value)
+            SharedCollection::Prelim(c) => {
+                let attr = c.attributes.get(name);
+                match attr {
+                    None =>  Ok(None),
+                    Some(attr) =>  Ok(Some(attr.clone()))
+                }
+            }
+        }
     }
 
     /// Removes an attribute from this XML node, given its `name`.
@@ -326,14 +346,19 @@ impl YXmlElement {
     /// Returns an iterator that enables to traverse over all attributes of this XML node in
     /// unspecified order.
     #[uniffi::method(default(txn=None))]
-    pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, String>> {
+    pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, YValue>> {
         match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.clone().attributes),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
                 let mut map = HashMap::new();
                 for (name, value) in c.attributes(txn) {
-                    map.insert(name.to_string(), value);
-                }
+                    if let Out::Any(attr) = value {
+                        map.insert(name.to_string(), into_yvalue(&attr));
+                    } else {
+                        return Err(Error::InvalidData("attr value".to_string()));
+                    }
+                };
+
                 Ok(map)
             }),
         }

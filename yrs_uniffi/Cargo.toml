@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-yrs = { version = "0.23.5", features = ["weak"] }
+yrs = { version = "0.24.0", features = ["weak"] }
 uniffi = { version = "0.29.3" }
 thiserror = "2.0.11"
 

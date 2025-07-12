@@ -1,12 +1,12 @@
-use std::cell::RefCell;
 use crate::collection::{Integrated, SharedCollection};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
+use std::cell::RefCell;
 use std::mem;
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use yrs::types::TYPE_REFS_XML_FRAGMENT;
-use yrs::{GetString, TransactionMut, XmlElementRef, XmlFragment, XmlFragmentRef};
+use yrs::{Doc, GetString, TransactionMut, XmlFragment, XmlFragmentRef};
 
 /// Represents a list of `YXmlElement` and `YXmlText` types.
 /// A `YXmlFragment` is similar to a `YXmlElement`, but it does not have a
@@ -21,6 +21,10 @@ unsafe impl Send for YXmlFragment {}
 
 
 impl YXmlFragment {
+    pub fn from_ref(fragment_ref: XmlFragmentRef, doc: Doc) -> Self {
+        YXmlFragment(Arc::new(RefCell::new(SharedCollection::integrated(fragment_ref, doc))))
+    }
+    
     pub fn new_with_collection(init: SharedCollection<Vec<YXmlChild>, XmlFragmentRef>) -> Self {
         YXmlFragment(Arc::new(RefCell::new(init)))
     }

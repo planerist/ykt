@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use yrs::updates::decoder::{Decode, DecoderV1};
 use yrs::updates::encoder::{Encode, Encoder, EncoderV1, EncoderV2};
-use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
+use yrs::{ReadTxn, StateVector, Transact, Update};
 
 #[derive(uniffi::Object)]
 #[repr(transparent)]

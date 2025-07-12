@@ -1,3 +1,4 @@
+use crate::attrs::{YAttributes, YValue};
 use crate::collection::SharedCollection;
 use crate::tools::Error;
 use crate::xml_elem::YXmlElement;
@@ -10,7 +11,7 @@ use yrs::block::{EmbedPrelim, ItemContent, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::xml::XmlPrelim;
 use yrs::types::TypeRef;
-use yrs::{Doc, Text, TransactionMut, XmlElementRef, XmlFragmentRef, XmlOut, XmlTextRef};
+use yrs::{Doc, TransactionMut, XmlElementRef, XmlFragmentRef, XmlOut, XmlTextRef};
 
 #[derive(uniffi::Enum)]
 #[derive(Clone)]
@@ -20,13 +21,29 @@ pub enum YXmlChild {
     Text(Arc<YXmlText>),
 }
 
-
 impl XmlPrelim for YXmlChild {}
 
 impl Into<EmbedPrelim<YXmlChild>> for YXmlChild {
     fn into(self) -> EmbedPrelim<YXmlChild> {
         EmbedPrelim::Shared(self)
     }
+}
+
+#[derive(uniffi::Enum)]
+#[derive(Clone)]
+pub enum YDeltaXmlChild {
+    Embed(YValue, Option<YAttributes>),
+    Element(Arc<YXmlElement>),
+    Fragment(Arc<YXmlFragment>),
+    Text(Arc<YXmlText>),
+}
+
+
+#[derive(uniffi::Enum)]
+pub enum YXmlDelta {
+    YInsert(YDeltaXmlChild),
+    YDelete(u32),
+    YRetain(u32, Option<YAttributes>),
 }
 
 impl Prelim for YXmlChild {
@@ -39,17 +56,16 @@ impl Prelim for YXmlChild {
     }
 
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
-        let doc = txn.doc().clone();
         match self {
             YXmlChild::Text(cell) => {
                 let xml_text = XmlTextRef::from(inner_ref);
                 cell.clone().integrate(txn, xml_text);
             }
-            YXmlChild::Element(mut cell) => {
+            YXmlChild::Element(cell) => {
                 let xml_element = XmlElementRef::from(inner_ref);
                 cell.clone().integrate(txn, xml_element);
             }
-            YXmlChild::Fragment(mut cell) => {
+            YXmlChild::Fragment(cell) => {
                 let xml_fragment = XmlFragmentRef::from(inner_ref);
                 cell.clone().integrate(txn, xml_fragment);
             }
@@ -62,7 +78,7 @@ impl YXmlChild {
         match value {
             XmlOut::Element(v) => YXmlChild::Element(Arc::new(YXmlElement(Arc::new(RefCell::new(SharedCollection::integrated(v, doc)))))),
             XmlOut::Fragment(v) => YXmlChild::Fragment(Arc::new(YXmlFragment::new_with_collection(SharedCollection::integrated(v, doc)))),
-            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(Arc::new(RefCell::new((SharedCollection::integrated(v, doc))))))),
+            XmlOut::Text(v) => YXmlChild::Text(Arc::new(YXmlText(Arc::new(RefCell::new(SharedCollection::integrated(v, doc)))))),
         }
     }
 

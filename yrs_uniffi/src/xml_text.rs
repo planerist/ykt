@@ -1,23 +1,22 @@
-use crate::attrs::{into_yattrs, into_yvalue, YValue};
+use crate::attrs::{from_yattrs, into_yattrs3, into_yvalue, YValue};
 use crate::collection::{Integrated, SharedCollection};
-use crate::delta::YDelta;
-use crate::delta::YDelta::YInsert;
 use crate::snapshots::YSnapshot;
-use crate::text::YText;
 use crate::tools::Error;
 use crate::transaction::YTransaction;
-use crate::xml::YXmlChild;
+use crate::xml::{YDeltaXmlChild, YXmlChild, YXmlDelta};
+use crate::xml_elem::YXmlElement;
+use crate::xml_frag::YXmlFragment;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_XML_TEXT;
-use yrs::{GetString, Out, Snapshot, Text, TransactionMut, Xml, XmlTextRef};
+use yrs::{Doc, GetString, Out, Snapshot, Text, TransactionMut, Xml, XmlTextRef};
 
 #[derive(Clone)]
 pub(crate) struct PrelimXmlText {
-    pub attributes: HashMap<String, String>,
+    pub attributes: HashMap<String, YValue>,
     pub text: String,
 }
 
@@ -30,6 +29,10 @@ unsafe impl Send for YXmlText {}
 
 
 impl YXmlText {
+    pub fn from_ref(xml_text_ref: XmlTextRef, doc: Doc) -> Self {
+        YXmlText(Arc::new(RefCell::new(SharedCollection::integrated(xml_text_ref, doc))))
+    }
+
     pub fn integrate(&self, txn: &mut TransactionMut, xml_text: XmlTextRef) {
         let doc = txn.doc().clone();
 
@@ -43,7 +46,7 @@ impl YXmlText {
 
         if let SharedCollection::Prelim(raw) = old_value {
             xml_text.insert(txn, 0, &raw.text);
-            for (name, value) in &raw.attributes {
+            for (name, value) in raw.attributes {
                 xml_text.insert_attribute(txn, name.clone(), value);
             }
         }
@@ -53,7 +56,7 @@ impl YXmlText {
 #[uniffi::export]
 impl YXmlText {
     #[uniffi::constructor(default(attributes=None))]
-    pub fn new(text: String, attributes: Option<HashMap<String, String>>) -> Self {
+    pub fn new(text: String, attributes: Option<HashMap<String, YValue>>) -> Self {
         YXmlText(Arc::new(RefCell::new(SharedCollection::prelim(PrelimXmlText {
             text: text,
             attributes: attributes.unwrap_or_default(),
@@ -102,7 +105,7 @@ impl YXmlText {
         &self,
         index: u32,
         chunk: &str,
-        attributes: Option<HashMap<String, String>>,
+        attributes: Option<HashMap<String, YValue>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
@@ -118,7 +121,7 @@ impl YXmlText {
                     c.insert(txn, index, chunk);
                     Ok(())
                 } else if let Some(attrs) = attributes {
-                    c.insert_with_attributes(txn, index, chunk, YText::convert_attrs(attrs));
+                    c.insert_with_attributes(txn, index, chunk, from_yattrs(&attrs));
                     Ok(())
                 } else {
                     Err(Error::InvalidFmt)
@@ -137,7 +140,7 @@ impl YXmlText {
         &self,
         index: u32,
         embed: YXmlChild,
-        attributes: Option<HashMap<String, String>>,
+        attributes: Option<HashMap<String, YValue>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(_) => {
@@ -148,7 +151,7 @@ impl YXmlText {
                     c.insert_embed(txn, index, embed);
                     Ok(())
                 } else if let Some(attrs) = attributes {
-                    c.insert_embed_with_attributes(txn, index, embed, YText::convert_attrs(attrs));
+                    c.insert_embed_with_attributes(txn, index, embed, from_yattrs(&attrs));
                     Ok(())
                 } else {
                     Err(Error::InvalidFmt)
@@ -164,13 +167,13 @@ impl YXmlText {
         &self,
         index: u32,
         length: u32,
-        attributes: Option<HashMap<String, String>>,
+        attributes: Option<HashMap<String, YValue>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         let attrs = match attributes {
             Some(attrs) => attrs,
             None => return Err(Error::InvalidFmt)
         };
-        let attrs = YText::convert_attrs(attrs);
+        let attrs = from_yattrs(&attrs);
 
         match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(_) => {
@@ -191,7 +194,7 @@ impl YXmlText {
     pub fn push(
         &self,
         chunk: &str,
-        attributes: Option<HashMap<String, String>>,
+        attributes: Option<HashMap<String, YValue>>,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         match &mut self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
@@ -208,7 +211,7 @@ impl YXmlText {
                     Ok(())
                 } else if let Some(attrs) = attributes {
                     let len = c.len(txn);
-                    c.insert_with_attributes(txn, len, chunk, YText::convert_attrs(attrs));
+                    c.insert_with_attributes(txn, len, chunk, from_yattrs(&attrs));
                     Ok(())
                 } else {
                     Err(Error::InvalidFmt)
@@ -303,11 +306,11 @@ impl YXmlText {
     pub fn set_attribute(
         &self,
         name: &str,
-        value: &str,
+        value: YValue,
         txn: Option<Arc<YTransaction>>) -> crate::tools::Result<()> {
         match self.0.borrow_mut().deref_mut() {
             SharedCollection::Prelim(c) => {
-                c.attributes.insert(name.to_string(), value.to_string());
+                c.attributes.insert(name.to_string(), value);
                 Ok(())
             }
             SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
@@ -320,15 +323,31 @@ impl YXmlText {
     /// Returns a value of an attribute given its `name`. If no attribute with such name existed,
     /// `null` will be returned.
     #[uniffi::method(default(txn=None))]
-    pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<String>> {
-        let value = match &self.0.borrow().deref() {
+    pub fn get_attribute(&self, name: &str, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<Option<YValue>> {
+        match &self.0.borrow().deref() {
             SharedCollection::Integrated(c) => {
-                c.readonly(txn, |c, txn| Ok(c.get_attribute(txn, name)))?
+                c.readonly(txn, |c, txn| {
+                    let out = c.get_attribute(txn, name);
+                    return match out {
+                        None => Ok(None),
+                        Some(out) => {
+                            if let Out::Any(attr) = out {
+                                Ok(Some(into_yvalue(&attr)))
+                            } else {
+                                return Err(Error::InvalidData("attr value".to_string()));
+                            }
+                        }
+                    };
+                })
             }
-            SharedCollection::Prelim(c) => c.attributes.get(name).cloned(),
-        };
-
-        Ok(value)
+            SharedCollection::Prelim(c) => {
+                let attr = c.attributes.get(name);
+                match attr {
+                    None => Ok(None),
+                    Some(attr) => Ok(Some(attr.clone()))
+                }
+            }
+        }
     }
 
     /// Removes an attribute from this XML node, given its `name`.
@@ -352,13 +371,17 @@ impl YXmlText {
     /// Returns an iterator that enables to traverse over all attributes of this XML node in
     /// unspecified order.
     #[uniffi::method(default(txn=None))]
-    pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, String>> {
+    pub fn attributes(&self, txn: Option<Arc<YTransaction>>) -> crate::tools::Result<HashMap<String, YValue>> {
         match &self.0.borrow().deref() {
             SharedCollection::Prelim(c) => Ok(c.attributes.clone()),
             SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| {
                 let mut map = HashMap::new();
                 for (name, value) in c.attributes(txn) {
-                    map.insert(name.to_string(), value);
+                    if let Out::Any(attr) = value {
+                        map.insert(name.to_string(), into_yvalue(&attr));
+                    } else {
+                        return Err(Error::InvalidData("attr value".to_string()));
+                    }
                 };
 
                 Ok(map)
@@ -373,7 +396,7 @@ impl YXmlText {
         snapshot: Option<Arc<YSnapshot>>,
         prev_snapshot: Option<Arc<YSnapshot>>,
         txn: Option<Arc<YTransaction>>,
-    ) -> crate::tools::Result<Vec<YDelta>> {
+    ) -> crate::tools::Result<Vec<YXmlDelta>> {
         match self.0.borrow().deref() {
             SharedCollection::Prelim(_) => {
                 Err(Error::InvalidPrelimOp)
@@ -392,37 +415,24 @@ impl YXmlText {
                     None
                 };
 
+                let doc = txn.doc().clone();
                 let delta = c.diff_range(txn, hi.as_ref(), lo.as_ref(), |change| change);
 
-                let mut array: Vec<YDelta> = vec![];
+                let mut array: Vec<YXmlDelta> = vec![];
                 for d in delta {
-                    let attrs = match d.attributes {
-                        None => None,
-                        Some(attrs) => Some(into_yattrs(*attrs))
-                    };
-
                     if let Out::Any(any) = d.insert {
-                        let d = YInsert(into_yvalue(&any), attrs);
-                        array.push(d);
+                        let attrs = if let Some(attrs) = d.attributes {
+                            Some(into_yattrs3(attrs.deref()))
+                        } else {
+                            None
+                        };
+                        array.push(YXmlDelta::YInsert(YDeltaXmlChild::Embed(into_yvalue(&any), attrs)));
                     } else if let Out::YXmlText(textRef) = d.insert {
-                        let mut map = HashMap::new();
-                        for (name, value) in textRef.attributes(txn) {
-                            map.insert(name.to_string(), YValue::String(value));
-                        }
-
-                        let d = YInsert(YValue::String(textRef.get_string(txn)), Some(map));
-                        array.push(d);
-                    } else if let Out::YXmlElement(elementRef) = d.insert {
-                        let mut map = HashMap::new();
-                        for (name, value) in elementRef.attributes(txn) {
-                            map.insert(name.to_string(), YValue::String(value));
-                        }
-
-                        let d = YInsert(YValue::String(elementRef.get_string(txn)), Some(map));
-                        array.push(d);
-                    } else if let Out::YXmlFragment(fragmentRef) = d.insert {
-                        let d = YInsert(YValue::String(fragmentRef.get_string(txn)), None);
-                        array.push(d);
+                        array.push(YXmlDelta::YInsert(YDeltaXmlChild::Text(Arc::new(YXmlText::from_ref(textRef, doc.clone())))));
+                    } else if let Out::YXmlElement(element_ref) = d.insert {
+                        array.push(YXmlDelta::YInsert(YDeltaXmlChild::Element(Arc::new(YXmlElement::from_ref(element_ref, doc.clone())))));
+                    } else if let Out::YXmlFragment(fragment_ref) = d.insert {
+                        array.push(YXmlDelta::YInsert(YDeltaXmlChild::Fragment(Arc::new(YXmlFragment::from_ref(fragment_ref, doc.clone())))));
                     } else {
                         return Err(Error::InvalidData(d.insert.to_string(txn)));
                     }

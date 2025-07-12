@@ -7,11 +7,10 @@ use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::types::{Attrs, TYPE_REFS_TEXT};
-use yrs::{Any, GetString, Out, Snapshot, Text, TextRef};
+use yrs::types::TYPE_REFS_TEXT;
+use yrs::{GetString, Out, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -277,17 +276,5 @@ impl YText {
                 Ok(())
             }),
         }
-    }
-}
-
-impl YText {
-    pub(crate) fn convert_attrs(attrs: HashMap<String, String>) -> Attrs {
-        let mut map = Attrs::new();
-
-        for (k, v) in attrs.iter() {
-            map.insert(Arc::from(k.as_str()), Any::String(Arc::from(v.as_str())));
-        };
-
-        map
     }
 }

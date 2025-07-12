@@ -95,10 +95,6 @@ unsafe impl Sync for YTransaction {}
 unsafe impl Send for YTransaction {}
 
 impl YTransaction {
-    pub fn new(txn: Arc<RefCell<YTransactionInner>>) -> Self {
-        YTransaction { inner: txn.clone() }
-    }
-
     pub fn get_inner(&self) -> Arc<RefCell<YTransactionInner>> {
         self.inner.clone()
     }
@@ -336,7 +332,7 @@ impl YTransaction {
     /// Force garbage collection of the deleted elements, regardless of a parent doc was created
     /// with `gc` option turned on or off.
     pub fn gc(&self) -> Result<()> {
-        self.get_inner().borrow_mut().force_gc();
+        self.get_inner().borrow_mut().gc(None);
         Ok(())
     }
 }

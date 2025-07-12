@@ -8,6 +8,7 @@ use yrs::Any;
 pub type YAttributes = HashMap<String, YValue>;
 
 #[derive(uniffi::Enum)]
+#[derive(Clone)]
 pub enum YValue {
     Null,
     Bool(bool),
@@ -17,6 +18,48 @@ pub enum YValue {
     Buffer(Vec<u8>),
     Array(Vec<YValue>),
     AttrMap(YAttributes),
+}
+
+impl Into<Any> for &YValue {
+    fn into(self) -> Any {
+        match self {
+            YValue::Null => Any::Null,
+            YValue::Bool(v) => Any::Bool(*v),
+            YValue::Number(v) => Any::Number(*v),
+            YValue::BigInt(v) => Any::BigInt(*v),
+            YValue::String(v) => Any::String(Arc::from(v.to_string())),
+            YValue::Buffer(v) => Any::Buffer(Arc::from(v.as_slice())),
+            YValue::Array(v) => Any::Array(v.iter().map(|x| x.into()).collect()),
+            YValue::AttrMap(v) => {
+                let mut res : HashMap<String, Any> = HashMap::new();
+                for (k, v) in v {
+                    res.insert(k.to_string(), v.into());
+                }
+                Any::Map(Arc::from(res))
+            }
+        }
+    }
+}
+
+impl Into<Any> for YValue {
+    fn into(self) -> Any {
+        match self {
+            YValue::Null => Any::Null,
+            YValue::Bool(v) => Any::Bool(v),
+            YValue::Number(v) => Any::Number(v),
+            YValue::BigInt(v) => Any::BigInt(v),
+            YValue::String(v) => Any::String(Arc::from(v.to_string())),
+            YValue::Buffer(v) => Any::Buffer(Arc::from(v.as_slice())),
+            YValue::Array(v) => Any::Array(v.iter().map(|x| x.into()).collect()),
+            YValue::AttrMap(v) => {
+                let mut res : HashMap<String, Any> = HashMap::new();
+                for (k, v) in v {
+                    res.insert(k.to_string(), v.into());
+                }
+                Any::Map(Arc::from(res))
+            }
+        }
+    }
 }
 
 pub fn into_yattrs(attrs: Attrs) -> YAttributes {
@@ -37,7 +80,7 @@ fn into_yattrs2(attrs: &HashMap<String, Any>) -> YAttributes {
     result
 }
 
-fn into_yattrs3(attrs: &HashMap<String, Any>) -> YAttributes {
+pub fn into_yattrs3(attrs: &Attrs) -> YAttributes {
     let mut result: YAttributes = HashMap::new();
     for (k, v) in attrs {
         result.insert(k.to_string(), into_yvalue(v));
@@ -65,26 +108,7 @@ pub fn into_yvalue(v: &Any) -> YValue {
     }
 }
 
-pub fn from_yvalue(v: &YValue) -> Any {
-    match v {
-        YValue::Null => Any::Null,
-        YValue::Bool(v) => Any::Bool(*v),
-        YValue::Number(v) => Any::Number(*v),
-        YValue::BigInt(v) => Any::BigInt(*v),
-        YValue::String(v) => Any::String(Arc::from(v.to_string())),
-        YValue::Buffer(v) => Any::Buffer(Arc::from(v.as_slice())),
-        YValue::Array(v) => Any::Array(v.iter().map(|x| from_yvalue(x)).collect()),
-        YValue::AttrMap(v) => {
-            let mut res : HashMap<String, Any> = HashMap::new();
-            for (k, v) in v {
-                res.insert(k.to_string(), from_yvalue(v));
-            }
-            Any::Map(Arc::from(res))
-        }
-    }
-}
-
-pub fn from_yattrs_opt(attr: &Option<YAttributes>) -> Option<Box<Attrs>> {
+pub fn from_yattrs_opt(attr: &Option<HashMap<String, YValue>>) -> Option<Box<Attrs>> {
     if let Some(v) = attr {
         Some(Box::from(from_yattrs(&v)))
     } else {
@@ -92,10 +116,10 @@ pub fn from_yattrs_opt(attr: &Option<YAttributes>) -> Option<Box<Attrs>> {
     }
 }
 
-pub fn from_yattrs(attrs: &YAttributes) -> Attrs {
+pub fn from_yattrs(attrs: &HashMap<String, YValue>) -> Attrs {
     let mut res : HashMap<Arc<str>, Any> = HashMap::new();
     for (k, v) in attrs {
-        res.insert(Arc::from(k.as_str()), from_yvalue(v));
+        res.insert(Arc::from(k.as_str()), v.into());
     }
 
     res

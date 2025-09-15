@@ -261,7 +261,7 @@ impl YTransaction {
     /// ```
     pub fn diff_v2(&self, vector: Vec<u8>) -> Result<Vec<u8>> {
         match StateVector::decode_v1(vector.to_vec().as_slice()) {
-            Ok(sv) => Ok(self.get_inner().borrow().encode_diff_v1(&sv)),
+            Ok(sv) => Ok(self.get_inner().borrow().encode_diff_v2(&sv)),
             Err(e) => Err(tools::Error::InvalidData(e.to_string())),
         }
     }

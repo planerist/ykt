@@ -13,6 +13,10 @@ use yrs::updates::encoder::Encode;
 use yrs::{ReadTxn, StateVector, TransactionMut, Update};
 
 pub struct YTransactionInner {
+    // SAFETY NOTE: We erase the lifetime of TransactionMut to 'static below and rely on the
+    // embedding application's guarantee that there are no concurrent calls into this library,
+    // and that any given YTransaction is only used from one thread at a time (although the
+    // thread may change between calls). Misuse outside those guarantees can cause UB.
     pub inner: ManuallyDrop<TransactionMut<'static>>,
     // pub cached_before_state: Option<PyObject>,
     pub committed: bool,
@@ -91,6 +95,11 @@ pub struct YTransaction {
     inner: Arc<RefCell<YTransactionInner>>,
 }
 
+// SAFETY: The outer Arc<RefCell<...>> is not Send nor Sync by default. We provide
+// these impls relying on the embedding application's guarantees:
+// - Calls into this library are not concurrent.
+// - A given object is only used by one thread at a time (though the thread may change between calls).
+// Violating these guarantees can cause undefined behavior.
 unsafe impl Sync for YTransaction {}
 unsafe impl Send for YTransaction {}
 
@@ -339,6 +348,8 @@ impl YTransaction {
 
 impl<'doc> From<TransactionMut<'doc>> for YTransaction {
     fn from(value: TransactionMut<'doc>) -> Self {
+        // SAFETY: We extend the lifetime of TransactionMut here based on external guarantees.
+        // See the note above YTransactionInner and the unsafe Send/Sync impls for details.
         let txn: TransactionMut<'static> = unsafe { std::mem::transmute(value) };
         YTransaction {
             inner: Arc::new(RefCell::new(YTransactionInner::new(txn))),

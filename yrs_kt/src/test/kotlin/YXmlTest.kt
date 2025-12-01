@@ -109,7 +109,7 @@ class YXmlTest {
         val d1 = YDoc(YDocOptions(1u, gc = false))
 
         val xml: YXmlFragment = d1.getXmlFragment("xml")
-        d1.transaction().use { txn ->
+        d1.transact { txn ->
             xml.push(
                 YXmlChild.Element(
                     YXmlElement(
@@ -136,7 +136,7 @@ class YXmlTest {
 
         root.push(YXmlChild.Element(xml))
 
-        var actual: Map<String, YValue?> = doc.transaction().use { txn ->
+        var actual: Map<String, YValue?> = doc.transact { txn ->
             // Test setting and getting attributes
             xml.setAttribute("key1", stringYValue("value1"), txn)
             xml.setAttribute("key2", longYValue(42), txn)
@@ -155,7 +155,7 @@ class YXmlTest {
         )
 
         // Test removing attribute
-        actual = doc.transaction().use { txn ->
+        actual = doc.transact { txn ->
             xml.removeAttribute("key1", txn)
 
             mapOf(
@@ -179,7 +179,7 @@ class YXmlTest {
         val doc = YDoc(YDocOptions(1u, gc = false))
         val xml = doc.getXmlFragment("test")
 
-        doc.transaction().use { txn ->
+        doc.transact { txn ->
             val text = createXmlText("some text", mapOf("attr1" to stringYValue("attr_value")))
             // Test setting and getting attributes
             xml.push(text, txn)
@@ -215,7 +215,7 @@ class YXmlTest {
         val root = d1.getXmlFragment("test")
 
         // Create and insert elements in a transaction
-        val first = d1.transaction().use { txn ->
+        val first = d1.transact { txn ->
             val p = createXmlElement(
                 "p",
                 emptyMap(),
@@ -247,7 +247,7 @@ class YXmlTest {
         val doc = YDoc(YDocOptions(1u, gc = false))
         val xml = doc.getXmlFragment("test")
 
-        doc.transaction().use { txn ->
+        doc.transact { txn ->
             val text = createXmlText("some text", mapOf("attr1" to stringYValue("v1")))
             // Test setting and getting attributes
             xml.push(text, txn)

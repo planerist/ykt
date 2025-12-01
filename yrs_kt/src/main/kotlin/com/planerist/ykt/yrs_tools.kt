@@ -1,5 +1,11 @@
 package com.planerist.ykt
 
+inline fun <R> YDoc.transact(origin: String? = null, block: (txn : YTransaction) -> R): R {
+    return this.transaction(origin).use { txn ->
+        block(txn)
+    }
+}
+
 fun createXmlElement(
     name: String,
     attributes: Map<String, YValue>? = null,
@@ -21,8 +27,8 @@ fun createXmlFragment(
     return YXmlChild.Fragment(YXmlFragment(children))
 }
 
-fun YXmlChild.toText(txn: YTransaction? = null) : String {
-    return when(this) {
+fun YXmlChild.toText(txn: YTransaction? = null): String {
+    return when (this) {
         is YXmlChild.Element -> this.v1.toText(txn)
         is YXmlChild.Fragment -> this.v1.toText(txn)
         is YXmlChild.Text -> this.v1.toText(txn)

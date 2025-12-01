@@ -1,68 +1,121 @@
 # Ykt
 
-Ykt is a Kotlin binding for [Y-CRDT](https://github.com/y-crdt/). It provides distributed data types that enable real-time collaboration between devices. Ykt can sync data with any other platform that has a Y-CRDT binding, allowing for seamless cross-domain communication. The library is a thin wrapper around Yrs, taking advantage of the safety and performance of Rust.
+Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt brings collaborative, conflict‑free data types to Kotlin applications by wrapping the high‑performance Rust implementation (Yrs) via UniFFI. Use it to build realtime text editors, notes, whiteboards, and any app that needs local‑first collaboration and seamless sync across devices and platforms.
 
-## Disclaimer
-Although this project is still a work in progress, I successfully use it in my own projects. It fully supports all YText capabilities, including deltas, formatting, and transactions.
+## Why Ykt?
+- Built on Yrs (Rust): safety, performance, and a mature CRDT core
+- Kotlin‑first ergonomics with a small, focused API surface
+- Interoperates with other Y‑CRDT bindings (JS, Rust, Swift, etc.) for cross‑platform sync
 
-Built on top of the mature Yrs framework, it offers a stable foundation. The primary limitation at this stage is the incomplete API, not stability or performance.
+## Status
+This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-## Getting Started
+Currently solid: YText (deltas, formatting, transactions), basic XML types, and core document/transaction flow.
 
-This project utilizes the uniffi binding, enabling yrs_kt to generate bindings for a wide variety of languages. For more information, please refer to the uniffi [supported platforms](https://mozilla.github.io/uniffi-rs/latest/).
+## Quick start
 
-Project organization:
+Ykt uses Mozilla UniFFI to bridge Kotlin and Rust.
 
-- [yrs_uniffi](yrs_uniffi) is uniffi bindings for yrs
-- [yrs_kt](yrs_kt) is Kotlin wrapper and basic tests for yrs_uniffi
+Project layout:
+- [yrs_uniffi](yrs_uniffi) — UniFFI bindings for Yrs (Rust)
+- [yrs_kt](yrs_kt) — Kotlin wrapper and basic tests
 
-## Build Artifacts
-Check GitHub Actions for JAR artifacts. Currently supported platforms include:
+### Build artifacts
+Prebuilt JARs are available in GitHub Actions.
 
-- Darwin (macOS): aarch64 & x86_64
+Supported targets today:
+- macOS (Darwin): aarch64 & x86_64
 - Linux: x86_64
 
-Additional target platforms can be added with ease.
+Adding more targets is straightforward; open an issue or PR if you need one.
 
-## What is implemented / TODO list
+### Install
+Option A — Download the JAR from GitHub Actions and include it in your classpath.
 
-This project source is based on the y-crdt ywasm project source.
+Option B — Build locally:
+```
+./gradlew build
+```
 
-- [x] Kotlin JVM + basic tests
-- [ ] Kotlin Multiplatform + tests
+## Usage example (Kotlin/JVM)
+```kotlin
+fun main() {
+    // Create a document and a YText shared type
+    val doc = YDoc()
+    val text = doc.getText("content")
 
+    // It's fine to mutate without an explicit transaction for YText
+    text.insert(0u, "hello")
+    text.insert(5u, " world", "{\"bold\":true}") // simple attrs as JSON
 
-- [ ] migrate doc examples from Wasm to Kotlin code
+    // Read the current textual value
+    println(text.toText()) // -> "hello world" (attributes don't affect plain text)
 
+    // You can also inspect structural changes as a Y delta
+    val delta = text.toDelta()
+    println("Delta: $delta")
 
-- [x] YDocument
-- [x] YTransaction
-  - [ ] get
-- [x] YText
-  - [x] insert (we need better Attrs interface)
-  - [ ] id
-  - [ ] insert_embed 
-  - [ ] quote
-  - [x] to_delta
-  - [x] apply_delta
-  - [ ] observe
-  - [ ] observe_deep
-  - [ ] unobserve
-  - [ ] unobserve_deep
-- [ ] Better Attrs interface
-- [ ] Awareness
-- [ ] YMap
-- [ ] YUndoManager
-- [ ] YWeakLink
-- [x] YXmlElement, YXmlFragment, YXmlText
-  - [ ] YXmlElement: tree_walker, observe, unobserve, observe_deep, observe_deep
-  - [ ] YXmlFragment: tree_walker, observe, unobserve, observe_deep, observe_deep
-  - [ ] YXmlEvent
-  - [ ] YXmlText: quote, apply_delta, observe, unobserver, observe_deep
-- [ ] Review & simplify Error 
-- [ ] YOutput: support all types (currently only str is supported)
+    // Apply a delta (e.g., from a remote peer)
+    text.applyDelta(
+        listOf(
+            YDelta.YRetain(11u, null),
+            YDelta.YInsert(YValue.String("!"), null)
+        )
+    )
+    println(text.toText()) // -> "hello world!"
 
+    // Using an explicit transaction is also OK (and is required for XML APIs); see YXmlTest
+    doc.transact { txn ->
+        // e.g., xml operations that require txn
+    }
+}
+```
 
-## Maintainers
+Notes:
+- API names may evolve while the Kotlin surface stabilizes.
+- Transactions are recommended for consistent reads/snapshots and are required for XML APIs; YText supports direct ops without an explicit transaction.
 
+## Roadmap / What’s implemented
+Source is inspired by y-crdt’s ywasm project.
+
+- Kotlin
+  - [x] JVM + basic tests
+  - [ ] Multiplatform + tests
+
+- Documentation
+  - [ ] Migrate doc examples from Wasm to Kotlin code
+
+- Core types
+  - [x] YDocument
+  - [x] YTransaction (basic)
+  - [x] YText
+    - [x] insert (Attrs interface will improve)
+    - [x] to_delta
+    - [x] apply_delta
+    - [ ] id
+    - [ ] insert_embed
+    - [ ] quote
+    - [ ] observe / observe_deep / unobserve / unobserve_deep
+  - [x] XML: YXmlElement, YXmlFragment, YXmlText
+    - [ ] YXmlElement: tree_walker, observe/unobserve, observe_deep
+    - [ ] YXmlFragment: tree_walker, observe/unobserve, observe_deep
+    - [ ] YXmlEvent
+    - [ ] YXmlText: quote, apply_delta, observe/unobserve, observe_deep
+
+- Utilities & ergonomics
+  - [ ] Better Attrs interface
+  - [ ] YOutput: full type coverage (currently only string)
+  - [ ] Awareness
+  - [ ] YMap
+  - [ ] YUndoManager
+  - [ ] YWeakLink
+  - [ ] Review & simplify Error types
+
+## Contributing
+Issues and PRs are welcome! If you’re missing a platform or a specific API, please open an issue to discuss design and approach.
+
+## License
+This project is licensed under the terms of the [MIT License](LICENSE).
+
+## Maintainer
 - [Sasha Zverev](https://github.com/planerist)

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use yrs::types::Attrs;
-use yrs::Any;
+use yrs::{Any, Number};
 
 pub type YAttributes = HashMap<String, YValue>;
 
@@ -25,8 +25,8 @@ impl Into<Any> for &YValue {
         match self {
             YValue::Null => Any::Null,
             YValue::Bool(v) => Any::Bool(*v),
-            YValue::Number(v) => Any::Number(*v),
-            YValue::BigInt(v) => Any::BigInt(*v),
+            YValue::Number(v) => Any::Number(Number::try_i64(*v)),
+            YValue::BigInt(v) => Any::Number(Number::Int(*v)),
             YValue::String(v) => Any::String(Arc::from(v.to_string())),
             YValue::Buffer(v) => Any::Buffer(Arc::from(v.as_slice())),
             YValue::Array(v) => Any::Array(v.iter().map(|x| x.into()).collect()),
@@ -46,8 +46,8 @@ impl Into<Any> for YValue {
         match self {
             YValue::Null => Any::Null,
             YValue::Bool(v) => Any::Bool(v),
-            YValue::Number(v) => Any::Number(v),
-            YValue::BigInt(v) => Any::BigInt(v),
+            YValue::Number(v) => Any::Number(Number::try_i64(v)),
+            YValue::BigInt(v) => Any::Number(Number::Int(v)),
             YValue::String(v) => Any::String(Arc::from(v.to_string())),
             YValue::Buffer(v) => Any::Buffer(Arc::from(v.as_slice())),
             YValue::Array(v) => Any::Array(v.iter().map(|x| x.into()).collect()),
@@ -94,8 +94,15 @@ pub fn into_yvalue(v: &Any) -> YValue {
         Any::Null => YValue::Null,
         Any::Undefined => YValue::Null,
         Any::Bool(v) => YValue::Bool(*v),
-        Any::Number(v) => YValue::Number(*v),
-        Any::BigInt(v) => YValue::BigInt(*v),
+        Any::Number(Number::Float(v)) => YValue::Number(*v),
+        // integers that fit into JS safe range are plain numbers, the rest are BigInts
+        Any::Number(Number::Int(v)) => {
+            if (Number::I64_MIN_SAFE_INTEGER..=Number::I64_MAX_SAFE_INTEGER).contains(v) {
+                YValue::Number(*v as f64)
+            } else {
+                YValue::BigInt(*v)
+            }
+        }
         Any::String(v) => YValue::String(v.to_string()),
         Any::Buffer(v) => YValue::Buffer(v.to_vec()),
         Any::Array(v) => {

@@ -6,7 +6,7 @@ pluginManagement {
     }
 }
 
-plugins { id("org.gradle.toolchains.foojay-resolver") version "0.8.0" }
+plugins { id("org.gradle.toolchains.foojay-resolver") version "1.0.0" }
 
 @Suppress("UnstableApiUsage")
 toolchainManagement {
@@ -19,7 +19,7 @@ toolchainManagement {
     }
 }
 
-val kotlinVersion = "2.2.21"
+val kotlinVersion = "2.4.21"
 
 dependencyResolutionManagement {
     versionCatalogs {

@@ -7,12 +7,12 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-yrs = { version = "0.24.0", features = ["weak"] }
-uniffi = { version = "0.29.4" }
-thiserror = "2.0.12"
+yrs = { version = "0.28.0", features = ["weak"] }
+uniffi = { version = "0.32.2" }
+thiserror = "2.0.21"
 
 [build-dependencies]
-uniffi = { version = "0.29.4", features = ["build", "cli"] }
+uniffi = { version = "0.32.2", features = ["build", "cli"] }
 
 [profile.release]
 codegen-units = 1
@@ -22,4 +22,4 @@ lto = true
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi-bindgen.rs"
-uniffi = { version = "0.29.3" }
+uniffi = { version = "0.32.2" }

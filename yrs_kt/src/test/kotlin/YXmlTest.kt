@@ -149,7 +149,7 @@ class YXmlTest {
         assertEquals(
             mapOf(
                 "key1" to stringYValue("value1"),
-                "key2" to longYValue(42),
+                "key2" to numberYValue(42.0),
                 "key3" to booleanYValue(false)
             ), actual
         )
@@ -168,8 +168,34 @@ class YXmlTest {
         assertEquals(
             mapOf(
                 "key1" to null,
-                "key2" to longYValue(42),
+                "key2" to numberYValue(42.0),
                 "key3" to booleanYValue(false)
+            ), actual
+        )
+    }
+
+    @Test
+    fun TestIntegerAttributes() {
+        val doc = YDoc(YDocOptions(1u, gc = false))
+        val root = doc.getXmlFragment("test")
+        val xml = YXmlElement("div", emptyMap(), emptyList())
+
+        root.push(YXmlChild.Element(xml))
+
+        val maxSafe = (1L shl 53) - 1
+        val bigInt = 1L shl 60
+        val actual = doc.transact { txn ->
+            xml.setAttribute("safe", longYValue(maxSafe), txn)
+            xml.setAttribute("big", longYValue(bigInt), txn)
+            xml.setAttribute("negBig", longYValue(-bigInt), txn)
+            xml.attributes(txn)
+        }
+
+        assertEquals(
+            mapOf(
+                "safe" to numberYValue(maxSafe.toDouble()),
+                "big" to longYValue(bigInt),
+                "negBig" to longYValue(-bigInt)
             ), actual
         )
     }

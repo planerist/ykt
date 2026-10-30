@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::block::ClientID;
 use yrs::error::UpdateError;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
@@ -66,7 +65,7 @@ impl YTransactionInner {
     //         let before_state = Python::with_gil(|py| {
     //             let txn = (*self).deref();
     //             let state_map: HashMap<u64, u32> =
-    //                 txn.before_state().iter().map(|(x, y)| (*x, *y)).collect();
+    //                 txn.before_state().iter().map(|(x, y)| (x.get(), *y)).collect();
     //             state_map.into_py(py)
     //         });
     //         self.cached_before_state = Some(before_state);
@@ -122,24 +121,24 @@ impl YTransaction {
 impl YTransaction {
     /// Returns state vector describing the state of the document
     /// at the moment when the transaction began.
-    pub fn before_state(&self) -> HashMap<ClientID, u32> {
+    pub fn before_state(&self) -> HashMap<u64, u32> {
         self.get_inner()
             .borrow()
             .before_state()
             .iter()
-            .map(|(x, y)| (*x, *y))
+            .map(|(x, y)| (x.get(), *y))
             .collect()
     }
 
     /// Returns state vector describing the current state of
     /// the document.
-    pub fn after_state(&self) -> HashMap<ClientID, u32> {
+    pub fn after_state(&self) -> HashMap<u64, u32> {
         let state_map: HashMap<u64, u32> = self
             .get_inner()
             .borrow()
             .after_state()
             .iter()
-            .map(|(x, y)| (*x, *y))
+            .map(|(x, y)| (x.get(), *y))
             .collect();
 
         state_map

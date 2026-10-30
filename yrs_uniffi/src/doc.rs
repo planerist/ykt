@@ -5,6 +5,7 @@ use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::ops::Deref;
 use std::sync::Arc;
+use yrs::block::ClientID;
 use yrs::types::TYPE_REFS_DOC;
 use yrs::{Doc, OffsetKind, Options, Transact};
 use crate::xml_frag::YXmlFragment;
@@ -90,7 +91,7 @@ impl YDoc {
 
     /// Gets unique peer identifier of this `YDoc` instance.
     pub fn id(&self) -> f64 {
-        self.client_id() as f64
+        self.client_id().get() as f64
     }
 
     /// Gets globally unique identifier of this `YDoc` instance.
@@ -197,7 +198,7 @@ pub struct YDocOptions {
 impl YDocOptions {
     fn fill(self, options: &mut Options) {
         if let Some(value) = self.client_id {
-            options.client_id = value;
+            options.client_id = ClientID::new(value);
         }
         if let Some(value) = self.guid {
             options.guid = value.into();

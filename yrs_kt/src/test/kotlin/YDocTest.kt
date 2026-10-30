@@ -19,7 +19,7 @@ class YDocTest {
 
         val d2 = YDoc(YDocOptions(2u))
         val txt2 = d2.getText("text")
-        applyUpdateV2(d2, state)
+        applyUpdateV2(d2, state.toDirectByteBuffer())
 
         assertEquals(txt2.toText(), "hello")
     }
@@ -34,7 +34,7 @@ class YDocTest {
         val state = encodeStateAsUpdateV2(d1)
 
         val d2 = YDoc(YDocOptions(2u))
-        applyUpdateV2(d2, state)
+        applyUpdateV2(d2, state.toDirectByteBuffer())
 
         val txt2 = d2.getText("text")
         assertEquals(txt2.toText(), "hello")

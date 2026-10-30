@@ -1,5 +1,7 @@
 package com.planerist.ykt
 
+import java.nio.ByteBuffer
+
 inline fun <R> YDoc.transact(origin: String? = null, block: (txn : YTransaction) -> R): R {
     return this.transaction(origin).use { txn ->
         block(txn)
@@ -55,3 +57,7 @@ fun numberYValue(value: Double) =
     YValue.Number(
         value
     )
+
+// zero-copy `&[u8]` arguments (applyUpdate, decodeSnapshotV1, ...) accept only direct buffers
+fun ByteArray.toDirectByteBuffer(): ByteBuffer =
+    ByteBuffer.allocateDirect(size).put(this).flip()

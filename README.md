@@ -14,11 +14,12 @@ Currently solid: YText (deltas, formatting, transactions), basic XML types, and 
 
 ## Quick start
 
-Ykt uses Mozilla UniFFI to bridge Kotlin and Rust.
+Ykt uses Mozilla UniFFI to bridge Rust to Kotlin and Swift.
 
 Project layout:
 - [yrs_uniffi](yrs_uniffi) — UniFFI bindings for Yrs (Rust)
 - [yrs_kt](yrs_kt) — Kotlin wrapper and basic tests
+- [yrs_swift](yrs_swift) — Swift package (SwiftPM) and basic tests
 
 ### Build artifacts
 Prebuilt JARs are available in GitHub Actions.
@@ -36,6 +37,13 @@ Option B — Build locally:
 ```
 ./gradlew build
 ```
+
+### Swift (macOS)
+```
+./build_swift_bindings.sh
+cd yrs_swift && swift test
+```
+The script generates `Sources/Ykt/Ykt.swift` and `YktFFI.xcframework`; add `yrs_swift` as a local package dependency and `import Ykt`.
 
 ## Usage example (Kotlin/JVM)
 ```kotlin

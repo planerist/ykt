@@ -3,6 +3,7 @@ name: Main
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -14,65 +15,68 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
+          targets: aarch64-apple-darwin, x86_64-apple-darwin, aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios
 
-      - name: prepare x86_64
-        run: rustup target add aarch64-apple-darwin
+      - name: build libs and Swift bindings
+        run: ./build_swift_bindings.sh --all
 
-      - name: prepare aarch64
-        run: rustup target add x86_64-apple-darwin
+      - name: test Swift package
+        working-directory: yrs_swift
+        run: swift test
 
-      - name: build x86_64
-        run: cargo build --release -p yrs_uniffi --target x86_64-apple-darwin
-
-      - name: build aarch64
-        run: cargo build --release -p yrs_uniffi --target aarch64-apple-darwin
+      - name: package Swift
+        run: |
+          mkdir -p dist/Ykt
+          cp -R yrs_swift/Package.swift yrs_swift/Sources yrs_swift/Tests yrs_swift/YktFFI.xcframework dist/Ykt/
+          cd dist && ditto -c -k --sequesterRsrc --keepParent Ykt ykt-swift.zip
 
       - name: Upload lib x86_64
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: uniffi-darwin-x86_64
           path: target/x86_64-apple-darwin/release/libyrs_uniffi.dylib
 
       - name: Upload lib aarch64
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: uniffi-darwin-aarch64
           path: target/aarch64-apple-darwin/release/libyrs_uniffi.dylib
+
+      - name: Upload Swift package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ykt-swift
+          path: dist/ykt-swift.zip
 
 
   build-yrs_uniffi-linux:
     runs-on: ubuntu-latest
     steps:
       - name: checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: build
         run: cargo build --release -p yrs_uniffi
 
       - name: export kotlin uniffi
-        run: cargo run --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.so
+        run: cargo run --release --features=uniffi/cli --bin uniffi-bindgen generate --language kotlin --out-dir yrs_kt/src/main/kotlin --library target/release/libyrs_uniffi.so
 
       - name: Upload lib
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: uniffi-linux
           path: target/release/libyrs_uniffi.so
 
       - name: Upload kotlin uniffi
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kt-uniffi
           path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
@@ -82,42 +86,65 @@ jobs:
     needs: [build-yrs_uniffi-linux, build-yrs_uniffi-macos]
     steps:
       - name: checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: kt-uniffi
-          path: yrs_kt/src/main/kotlin/com/planerist/ykt/yrs_uniffi.kt
+          path: yrs_kt/src/main/kotlin/com/planerist/ykt/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: uniffi-linux
           path: yrs_kt/src/main/resources/linux-x86-64/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: uniffi-darwin-x86_64
           path: yrs_kt/src/main/resources/darwin-x86-64/
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: uniffi-darwin-aarch64
           path: yrs_kt/src/main/resources/darwin-aarch64/
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Build y_kt
-        run: ./gradlew build test jar kotlinSourcesJar
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION_ARG="-Pykt.version=${GITHUB_REF_NAME#v}"
+          fi
+          ./gradlew build kotlinSourcesJar ${VERSION_ARG:+"$VERSION_ARG"}
 
       - name: Upload jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ykt
           path: yrs_kt/build/libs
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [build-yrs_kt, build-yrs_uniffi-macos]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ykt
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ykt-swift
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          mv dist/ykt-swift.zip "dist/ykt-swift-$VERSION.zip"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes dist/*

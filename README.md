@@ -22,28 +22,30 @@ Project layout:
 - [yrs_swift](yrs_swift) — Swift package (SwiftPM) and basic tests
 
 ### Build artifacts
-Prebuilt JARs are available in GitHub Actions.
+Prebuilt JARs and the Swift package are attached to [GitHub Releases](https://github.com/planerist/ykt/releases).
 
 Supported targets today:
-- macOS (Darwin): aarch64 & x86_64
-- Linux: x86_64
+- Kotlin/JVM: macOS (Darwin) aarch64 & x86_64, Linux x86_64
+- Swift: macOS (aarch64 & x86_64), iOS, iOS Simulator
 
 Adding more targets is straightforward; open an issue or PR if you need one.
 
 ### Install
-Option A — Download the JAR from GitHub Actions and include it in your classpath.
+Option A — Download the JAR from GitHub Releases and include it in your classpath.
 
 Option B — Build locally:
 ```
 ./gradlew build
 ```
 
-### Swift (macOS)
+### Swift
+Download `ykt-swift-<version>.zip` from GitHub Releases, unzip it and add the `Ykt` folder as a local package dependency, then `import Ykt`.
+
+To build locally (`--all` adds iOS and both macOS architectures, requires the rustup targets):
 ```
 ./build_swift_bindings.sh
 cd yrs_swift && swift test
 ```
-The script generates `Sources/Ykt/Ykt.swift` and `YktFFI.xcframework`; add `yrs_swift` as a local package dependency and `import Ykt`.
 
 ## Usage example (Kotlin/JVM)
 ```kotlin

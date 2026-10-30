@@ -2,7 +2,7 @@ plugins {
     kotlin("jvm") apply true
 }
 
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("ykt.version").getOrElse("1.0-SNAPSHOT")
 
 dependencies {
     api("net.java.dev.jna:jna:5.19.1")

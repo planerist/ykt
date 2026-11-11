@@ -8,15 +8,17 @@ rm -rf $OUT
 
 lib() { echo target/$1/release/libyrs_uniffi.a }
 
-# --all: macOS (arm64 + x86_64), iOS and iOS simulator slices; requires the rustup targets
+# --all: macOS (arm64 + x86_64), iOS, iOS simulator and Mac Catalyst slices; requires the rustup targets
 if [[ "$1" == "--all" ]]; then
-    for t in aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
+    for t in aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-ios-macabi x86_64-apple-ios-macabi; do
         cargo build --release -p yrs_uniffi --target $t
     done
-    mkdir -p $OUT/macos $OUT/ios-sim
+    mkdir -p $OUT/macos $OUT/ios-sim $OUT/maccatalyst
     lipo -create $(lib aarch64-apple-darwin) $(lib x86_64-apple-darwin) -output $OUT/macos/libyrs_uniffi.a
     lipo -create $(lib aarch64-apple-ios-sim) $(lib x86_64-apple-ios) -output $OUT/ios-sim/libyrs_uniffi.a
-    LIBS=($OUT/macos/libyrs_uniffi.a $(lib aarch64-apple-ios) $OUT/ios-sim/libyrs_uniffi.a)
+    # Mac Catalyst (iOS apps running on the Mac)
+    lipo -create $(lib aarch64-apple-ios-macabi) $(lib x86_64-apple-ios-macabi) -output $OUT/maccatalyst/libyrs_uniffi.a
+    LIBS=($OUT/macos/libyrs_uniffi.a $(lib aarch64-apple-ios) $OUT/ios-sim/libyrs_uniffi.a $OUT/maccatalyst/libyrs_uniffi.a)
     BINDGEN_LIB=target/aarch64-apple-darwin/release/libyrs_uniffi.dylib
 else
     cargo build --release -p yrs_uniffi

@@ -26,7 +26,7 @@ Prebuilt JARs and the Swift package are attached to [GitHub Releases](https://gi
 
 Supported targets today:
 - Kotlin/JVM: macOS (Darwin) aarch64 & x86_64, Linux x86_64
-- Swift: macOS (aarch64 & x86_64), iOS, iOS Simulator
+- Swift: macOS (aarch64 & x86_64), iOS, iOS Simulator, Mac Catalyst (aarch64 & x86_64)
 
 Adding more targets is straightforward; open an issue or PR if you need one.
 
@@ -41,7 +41,7 @@ Option B — Build locally:
 ### Swift
 Download `ykt-swift-<version>.zip` from GitHub Releases, unzip it and add the `Ykt` folder as a local package dependency, then `import Ykt`.
 
-To build locally (`--all` adds iOS and both macOS architectures, requires the rustup targets):
+To build locally (`--all` adds iOS, Mac Catalyst and both macOS architectures, requires the rustup targets):
 ```
 ./build_swift_bindings.sh
 cd yrs_swift && swift test

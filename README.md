@@ -8,7 +8,7 @@ Used in production by [Yaranga](https://yaranga.net): a note is one `Y.Text` of 
 
 **Swift** (macOS, iOS, iOS Simulator, Mac Catalyst):
 ```swift
-.package(url: "https://github.com/planerist/ykt", from: "0.5.1")   // then: import Ykt
+.package(url: "https://github.com/planerist/ykt", from: "0.5.2")   // then: import Ykt
 ```
 
 **Kotlin/JVM** (macOS arm64 / x86_64, Linux x86_64): take `yrs_kt-<version>.jar` from [Releases](https://github.com/planerist/ykt/releases), or run `./gradlew build`.

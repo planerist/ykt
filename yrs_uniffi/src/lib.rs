@@ -6,6 +6,9 @@ mod text;
 mod tools;
 mod transaction;
 mod delta;
+mod observers;
+#[cfg(test)]
+mod observer_tests;
 mod xml_frag;
 mod xml_elem;
 mod xml_text;

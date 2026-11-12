@@ -8,7 +8,7 @@ use yrs::{Any, Number};
 pub type YAttributes = HashMap<String, YValue>;
 
 #[derive(uniffi::Enum)]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum YValue {
     Null,
     Bool(bool),

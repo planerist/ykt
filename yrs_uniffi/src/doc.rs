@@ -1,9 +1,14 @@
 use crate::collection::SharedCollection;
+use crate::observers::{
+    encode_delete_set, origin_bytes, state_map, subscription_key, ObserveResult, YSubscription,
+    YTransactionCleanupEvent, YTransactionCleanupObserver, YUpdateEvent, YUpdateObserver,
+};
 use crate::text::YText;
 use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::block::ClientID;
 use yrs::types::TYPE_REFS_DOC;
@@ -168,6 +173,71 @@ impl YDoc {
     pub fn get_xml_fragment(&self, name: &str) -> YXmlFragment {
         let shared_ref = self.get_or_insert_xml_fragment(name);
         YXmlFragment::new_with_collection(SharedCollection::integrated(shared_ref, self.0.clone()))
+    }
+
+    /// Calls `observer` with every committed transaction's changes as one update, lib0 v1 encoding,
+    /// and the transaction's origin (Yjs's `doc.on('update')`). Fails while a transaction is open.
+    /// The callback runs on the committing thread while the document is still locked: it must not
+    /// read or write the document.
+    pub fn observe_update_v1(&self, observer: Arc<dyn YUpdateObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_update_v1(key.clone(), move |txn, event| {
+                if running.load(Ordering::SeqCst) {
+                    observer.on_update(YUpdateEvent { update: event.update.clone(), origin: origin_bytes(txn) });
+                }
+            })
+            .map_err(|_| Error::AnotherTx)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_update_v1(key).unwrap_or(false)))
+    }
+
+    /// As `observe_update_v1`, in lib0 v2 encoding (Yjs's `doc.on('updateV2')`).
+    pub fn observe_update_v2(&self, observer: Arc<dyn YUpdateObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_update_v2(key.clone(), move |txn, event| {
+                if running.load(Ordering::SeqCst) {
+                    observer.on_update(YUpdateEvent { update: event.update.clone(), origin: origin_bytes(txn) });
+                }
+            })
+            .map_err(|_| Error::AnotherTx)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_update_v2(key).unwrap_or(false)))
+    }
+
+    /// Calls `observer` after every committed transaction with the state vectors before and after
+    /// it and what it deleted (Yjs's `doc.on('afterTransaction')`, as yrs's transaction cleanup):
+    /// e.g. to store or send only what changed. Fails while a transaction is open.
+    pub fn observe_transaction_cleanup(&self, observer: Arc<dyn YTransactionCleanupObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_transaction_cleanup(key.clone(), move |txn, event| {
+                if running.load(Ordering::SeqCst) {
+                    observer.on_cleanup(YTransactionCleanupEvent {
+                        before_state: state_map(&event.before_state),
+                        after_state: state_map(&event.after_state),
+                        delete_set: encode_delete_set(&event.delete_set),
+                        origin: origin_bytes(txn),
+                    });
+                }
+            })
+            .map_err(|_| Error::AnotherTx)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_transaction_cleanup(key).unwrap_or(false)))
+    }
+}
+
+impl YDoc {
+    /// A subscription's key and its on/off switch (the callback's copy and the handle's). It is
+    /// off until the callback is registered: yrs registers it in a transaction of its own, whose
+    /// commit would otherwise reach the new callback (an empty cleanup event nobody made).
+    fn new_subscription() -> (yrs::Origin, Arc<AtomicBool>, Arc<AtomicBool>) {
+        let active = Arc::new(AtomicBool::new(false));
+        (subscription_key(), active.clone(), active)
     }
 }
 

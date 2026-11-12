@@ -3,6 +3,7 @@ use yrs::types::Delta;
 use yrs::Any;
 
 #[derive(uniffi::Enum)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum YDelta {
     YInsert(YValue, Option<YAttributes>),
     YDelete(u32),

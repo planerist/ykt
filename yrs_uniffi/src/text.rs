@@ -6,11 +6,13 @@ use crate::snapshots::YSnapshot;
 use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
+use crate::observers::{origin_bytes, subscription_key, text_delta, ObserveResult, YSubscription, YTextEvent, YTextObserver};
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_TEXT;
-use yrs::{GetString, Out, Snapshot, Text, TextRef};
+use yrs::{GetString, Observable, Out, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -256,6 +258,43 @@ impl YText {
                 }
                 Ok(array)
             }),
+        }
+    }
+
+    /// Calls `observer` after every committed transaction that changed this text, with the change
+    /// as a delta and the transaction's origin (Yjs's `ytext.observe`). The callback runs on the
+    /// committing thread while the document is still locked: it must not read or write the
+    /// document (see the `observers` module). The subscription stops on `unsubscribe()` or when it
+    /// is released.
+    pub fn observe(&self, observer: Arc<dyn YTextObserver>) -> ObserveResult {
+        match self.inner.borrow().deref() {
+            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
+            SharedCollection::Integrated(c) => {
+                let text: TextRef = {
+                    let txn = c.transact().map_err(|_| Error::AnotherRwTx)?;
+                    c.resolve(&txn)?
+                };
+                let key = subscription_key();
+                let active = Arc::new(AtomicBool::new(true));
+                let running = active.clone();
+                text.observe(key.clone(), move |txn, event| {
+                    if !running.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    observer.on_change(YTextEvent {
+                        delta: text_delta(event.delta(txn), txn),
+                        origin: origin_bytes(txn),
+                    });
+                });
+                // The handle keeps the document alive: `text` points into its store, which must
+                // outlive the unobserve (a subscription may be released after the document).
+                let doc = c.doc.clone();
+                Ok(YSubscription::new(active, move || {
+                    let removed = text.unobserve(key);
+                    drop(doc);
+                    removed
+                }))
+            }
         }
     }
 

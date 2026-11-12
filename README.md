@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions), basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, basic XML types, and core document/transaction flow.
 
 ## Quick start
 
@@ -85,40 +85,94 @@ Notes:
 - API names may evolve while the Kotlin surface stabilizes.
 - Transactions are recommended for consistent reads/snapshots and are required for XML APIs; YText supports direct ops without an explicit transaction.
 
+## Observers
+Callbacks from Rust into Kotlin or Swift when a document or a text changes, as Yjs's `observe` and
+`on('update')`:
+
+- `YText.observe` — the text's change as a delta (retain / insert / delete, UTF‑16 units, with
+  formatting attributes) and the transaction's origin, once per committed transaction;
+- `YDoc.observeUpdateV1` / `observeUpdateV2` — every committed transaction as one update, ready to
+  store or send (`applyUpdate` on another replica);
+- `YDoc.observeTransactionCleanup` — the state vectors before and after every transaction, and what
+  it deleted.
+
+Each returns a `YSubscription`: `unsubscribe()` stops it, and so does releasing it (Kotlin `close()`
+/ `use { }`, Swift ARC). It keeps the document's store alive, so it may outlive the document.
+
+```kotlin
+val sub = text.observe { event ->
+    if (event.originString != "editor") applyToTheView(event.delta)   // skip our own writes
+}
+val updates = doc.observeUpdateV2 { event -> send(event.update) }
+doc.transact("editor") { txn -> text.insert(0u, "hi", null, txn) }  // one event, origin "editor"
+sub.close(); updates.close()
+```
+
+```swift
+let sub = try text.observe { event in
+    if event.originString != "editor" { applyToTheView(event.delta) }
+}
+let updates = try doc.observeUpdateV2 { event in send(event.update) }
+```
+
+Rules:
+- Callbacks run synchronously on the thread that commits the transaction, while the document is
+  still locked: they must not read or write the document (that throws `AnotherTx`); everything they
+  need is in the event. Defer anything else.
+- Unsubscribing is safe anywhere, inside a callback too: the callback is switched off at once.
+- Subscribing to document events while a transaction is open throws.
+- Threads: ykt documents expect one call at a time. Share a document between threads behind a lock
+  (callbacks then run on whichever thread commits), or give each replica its own thread and sync
+  replicas through their update events (see the threading tests in `yrs_uniffi/src/observer_tests.rs`,
+  `yrs_swift/Tests/YktTests/ObserverTests.swift`, `yrs_kt/src/test/kotlin/ObserverTest.kt`).
+
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
 
-- Kotlin
-  - [x] JVM + basic tests
-  - [ ] Multiplatform + tests
+- Platforms
+  - [x] Kotlin/JVM + tests
+  - [x] Swift (macOS, iOS, iOS Simulator, Mac Catalyst) + tests
+  - [ ] Kotlin Multiplatform + tests
 
 - Documentation
   - [ ] Migrate doc examples from Wasm to Kotlin code
 
 - Core types
   - [x] YDocument
-  - [x] YTransaction (basic)
+    - [x] observe_update_v1 / observe_update_v2 (update + origin)
+    - [x] observe_transaction_cleanup (state vectors before/after, delete set, origin)
+    - [ ] observe_after_transaction, observe_subdocs, observe_destroy
+  - [x] YTransaction (basic: origin, state vectors, diff, apply, commit)
   - [x] YText
     - [x] insert (Attrs interface will improve)
     - [x] to_delta
     - [x] apply_delta
+    - [x] observe / unobserve (`YSubscription`: delta + origin)
+    - [ ] observe_deep / unobserve_deep (changes of shared types embedded in the text)
     - [ ] id
     - [ ] insert_embed
     - [ ] quote
-    - [ ] observe / observe_deep / unobserve / unobserve_deep
   - [x] XML: YXmlElement, YXmlFragment, YXmlText
     - [ ] YXmlElement: tree_walker, observe/unobserve, observe_deep
     - [ ] YXmlFragment: tree_walker, observe/unobserve, observe_deep
     - [ ] YXmlEvent
     - [ ] YXmlText: quote, apply_delta, observe/unobserve, observe_deep
+  - [ ] YMap (+ observe)
+  - [ ] YArray (+ observe)
+  - [ ] YWeakLink
+
+- Collaboration
+  - [ ] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
+    place through remote edits; encode/decode
+  - [ ] YUndoManager (scope, tracked origins, capture timeout, stack item events)
+  - [ ] Update utilities without a document: merge_updates, diff_update,
+    encode_state_vector_from_update (v1 and v2)
+  - [ ] Awareness
 
 - Utilities & ergonomics
-  - [ ] Better Attrs interface
-  - [ ] YOutput: full type coverage (currently only string)
-  - [ ] Awareness
-  - [ ] YMap
-  - [ ] YUndoManager
-  - [ ] YWeakLink
+  - [ ] Better Attrs interface (typed attributes instead of JSON strings for insert / format)
+  - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
+  - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
   - [ ] Review & simplify Error types
 
 ## Contributing

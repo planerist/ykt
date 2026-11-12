@@ -22,7 +22,8 @@ Project layout:
 - [yrs_swift](yrs_swift) — Swift package (SwiftPM) and basic tests
 
 ### Build artifacts
-Prebuilt JARs and the Swift package are attached to [GitHub Releases](https://github.com/planerist/ykt/releases).
+Prebuilt JARs and the Swift xcframework are attached to [GitHub Releases](https://github.com/planerist/ykt/releases);
+the Swift package is the repository itself at a release tag.
 
 Supported targets today:
 - Kotlin/JVM: macOS (Darwin) aarch64 & x86_64, Linux x86_64
@@ -39,13 +40,35 @@ Option B — Build locally:
 ```
 
 ### Swift
-Download `ykt-swift-<version>.zip` from GitHub Releases, unzip it and add the `Ykt` folder as a local package dependency, then `import Ykt`.
+Add the package by its URL and a version (from 0.5.0), then `import Ykt`:
+```swift
+dependencies: [
+    .package(url: "https://github.com/planerist/ykt", from: "0.5.0"),
+],
+targets: [
+    .target(name: "App", dependencies: [.product(name: "Ykt", package: "ykt")]),
+]
+```
+(In Xcode: File → Add Package Dependencies…, the URL, "Up to Next Major".) SwiftPM downloads the
+release's `YktFFI.xcframework.zip` (macOS, iOS, iOS Simulator, Mac Catalyst) and checks it against the
+checksum in the tag's `Package.swift`. `ykt-swift-<version>.zip` (the `Ykt` folder, to add as a local
+package) stays in each release too.
 
-To build locally (`--all` adds iOS, Mac Catalyst and both macOS architectures, requires the rustup targets):
+To build locally (`--all` adds iOS, Mac Catalyst and both macOS architectures, requires the rustup
+targets) and use `yrs_swift/` as a path-based package:
 ```
 ./build_swift_bindings.sh
 cd yrs_swift && swift test
 ```
+
+### Releasing
+From main, with the version in `yrs_uniffi/Cargo.toml`: Actions → Main → Run workflow with that
+version, or `gh workflow run main.yml --ref main -f version=x.y.z`. The workflow builds and tests
+everything, then on top of the built commit commits the root `Package.swift`
+(`swift_release_manifest.sh`: its binary target is the release's `YktFFI.xcframework.zip`, with its
+SHA-256 checksum) and the generated `yrs_swift/Sources/Ykt/Ykt.swift`, tags that commit `vx.y.z`, pushes
+only the tag (main doesn't get the commit), and creates the GitHub release with the JARs, the
+xcframework zip and `ykt-swift-x.y.z.zip`. Pushing a `v*` tag by hand no longer releases.
 
 ## Usage example (Kotlin/JVM)
 ```kotlin
@@ -419,7 +442,7 @@ Source is inspired by y-crdt’s ywasm project.
 
 - Platforms
   - [x] Kotlin/JVM + tests
-  - [x] Swift (macOS, iOS, iOS Simulator, Mac Catalyst) + tests
+  - [x] Swift (macOS, iOS, iOS Simulator, Mac Catalyst) + tests; SwiftPM by URL and version (0.5.0 on)
   - [ ] Kotlin Multiplatform + tests
 
 - Documentation

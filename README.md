@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions, observers), YMap and YArray of plain values (+ observers), document update and transaction observers, update utilities without a document, relative positions, undo / redo, basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting with JSON or typed attributes, embeds, transactions, observers), YMap and YArray with nested shared types (+ observers), deep and XML observers, document update, transaction and subdocument events, update utilities without a document, relative positions, undo / redo, awareness, basic XML types, core document/transaction flow, and one error type.
 
 ## Quick start
 

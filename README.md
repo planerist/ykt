@@ -112,7 +112,7 @@ tags.observe { e -> e.delta }          // Insert / Delete / Retain
 
 // Nested shared types
 val title = note.setText("title", "Untitled")    // also setMap, setArray, setDoc; YArray.insertText, …
-note.getOutput("meta")?.asMap                    // a Value, or a handle: Text, Map, Array, Xml…, Doc
+note.getOutput("meta")?.asMap                    // a Value, or a handle: Text, Map, Array, Xml…, Doc, WeakLink
 ```
 
 ### XML
@@ -125,6 +125,17 @@ root.treeWalker()                              // every node inside, depth-first
 xmlText.applyDelta(delta); xmlText.toDelta()   // as YText's; nodes embedded in it come as handles
 ```
 `treeWalker` is Yjs's [`createTreeWalker`](https://docs.yjs.dev/api/shared-types/y.xmlfragment) without a filter: filter the list.
+
+### Weak links
+```kotlin
+val quote = tags.quote(1u, 2u)                   // values 1 and 2, and what is inserted between them
+val pinned = note.setWeakLink("pinned", quote)   // also YArray.insertWeakLink, YText.insertEmbedWeakLink
+pinned.unquote()                                 // the quoted values now, as YOutput
+val current = settings.setWeakLink("current", settings.link("theme")!!)   // a link to a map entry…
+current.deref()                                  // …its value now; null once the entry is deleted
+note.getOutput("pinned")?.asWeakLink             // on a replica too; observe / observeDeep hear changes
+```
+As yrs's [weak links](https://docs.rs/yrs/0.28.0/yrs/#weak-links-and-quotations); Yjs has none yet. `get` and `toJson` give a link as `null`.
 
 ### Positions
 ```kotlin
@@ -168,11 +179,11 @@ One type: `YError` in Swift, `YException` in Kotlin. Match on the case, not on t
 |---|---|
 | `Locked` | The document is busy on this thread: inside a transaction or a callback |
 | `TransactionCommitted` | A transaction used after its commit |
-| `WrongDocument` | Another document's transaction, text or position |
+| `WrongDocument` | Another document's transaction, text, position or link |
 | `TypeDeleted` | A type its parent deleted |
 | `NotIntegrated` | A preliminary type (not in a document yet) where one is needed |
 | `AlreadyIntegrated` | A node inserted twice |
-| `OutOfBounds` | An index or a range past the end |
+| `OutOfBounds` | An index or a range past the end, or an empty quote |
 | `InvalidAttributes` | Attributes that aren't a JSON object |
 | `InvalidData` | Bytes that aren't an update, state vector, snapshot, position or awareness update |
 | `GcEnabled` | A snapshot state of a document with `gc = true` |
@@ -180,7 +191,7 @@ One type: `YError` in Swift, `YException` in Kotlin. Match on the case, not on t
 ## Planned
 
 - [ ] Kotlin Multiplatform
-- [ ] `YText.quote`, `YWeakLink`
+- [ ] `YText.quote`
 
 ## Releasing
 

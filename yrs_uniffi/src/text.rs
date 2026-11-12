@@ -8,6 +8,7 @@ use crate::snapshots::YSnapshot;
 use crate::sticky::{YAssoc, YStickyIndex};
 use crate::tools::{check_range, utf16_len, utf16_offset, Error, Result};
 use crate::transaction::YTransaction;
+use crate::weak::YWeakLink;
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use yrs::types::TYPE_REFS_TEXT;
 use yrs::types::Attrs;
 use yrs::block::{EmbedPrelim, Prelim};
-use yrs::{Any, GetString, Observable, Snapshot, Text, TextPrelim, TextRef};
+use yrs::{Any, GetString, Observable, Snapshot, Text, TextPrelim, TextRef, TransactionMut};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -82,11 +83,12 @@ impl YText {
         })
     }
 
-    /// Embeds a new shared type at `index` and gives its handle.
+    /// Embeds a new shared type at `index` (made in the transaction by `prelim`) and gives its
+    /// handle.
     fn embed_shared<P, R>(
         &self,
         index: u32,
-        prelim: P,
+        prelim: impl FnOnce(&TransactionMut) -> Result<P>,
         attributes: Option<YAttributes>,
         txn: Option<Arc<YTransaction>>,
         handle: impl FnOnce(P::Return, yrs::Doc) -> R,
@@ -100,6 +102,7 @@ impl YText {
             if index > c.len(txn) {
                 return Err(Error::OutOfBounds);
             }
+            let prelim = prelim(txn)?;
             let nested = match attributes {
                 Some(attrs) if !attrs.is_empty() => c.insert_embed_with_attributes(txn, index, prelim, from_yattrs(&attrs)),
                 _ => c.insert_embed(txn, index, prelim),
@@ -227,7 +230,7 @@ impl YText {
         attributes: Option<YAttributes>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Arc<YText>> {
-        self.embed_shared(index, TextPrelim::new(text.unwrap_or_default()), attributes, txn, |text, doc| {
+        self.embed_shared(index, |_| Ok(TextPrelim::new(text.unwrap_or_default())), attributes, txn, |text, doc| {
             Arc::new(YText::new(SharedCollection::integrated(text, doc)))
         })
     }
@@ -241,7 +244,7 @@ impl YText {
         attributes: Option<YAttributes>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Arc<YMap>> {
-        self.embed_shared(index, map_prelim(entries), attributes, txn, |map, doc| Arc::new(YMap(Integrated::new(map, doc))))
+        self.embed_shared(index, |_| Ok(map_prelim(entries)), attributes, txn, |map, doc| Arc::new(YMap(Integrated::new(map, doc))))
     }
 
     /// Embeds a new array with `values` at `index` (as `insertEmbedText`), and returns it.
@@ -253,7 +256,20 @@ impl YText {
         attributes: Option<YAttributes>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Arc<YArray>> {
-        self.embed_shared(index, array_prelim(values), attributes, txn, |array, doc| Arc::new(YArray(Integrated::new(array, doc))))
+        self.embed_shared(index, |_| Ok(array_prelim(values)), attributes, txn, |array, doc| Arc::new(YArray(Integrated::new(array, doc))))
+    }
+
+    /// Embeds a weak link at `index`, with formatting `attributes` (as `insertEmbedText`; see
+    /// `YMap.setWeakLink`), and returns it. Deltas give it in its JSON form, `null`.
+    #[uniffi::method(default(attributes=None, txn=None))]
+    pub fn insert_embed_weak_link(
+        &self,
+        index: u32,
+        link: &YWeakLink,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<Arc<YWeakLink>> {
+        self.embed_shared(index, |txn| link.quote_for(txn), attributes, txn, |link, doc| Arc::new(YWeakLink::from_ref(link, doc)))
     }
 
     /// Formats `length` units from `index` on with `attributes`, a JSON object (a `null` value

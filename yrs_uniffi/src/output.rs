@@ -1,6 +1,6 @@
 //! What a document holds where a value can be a shared type: `YOutput`, a plain value (`YValue`) or
 //! a handle to the shared type — a text, a map or an array nested in a map or an array (Yjs's
-//! `map.set('k', new Y.Map())`), an XML node, a subdocument. Maps' and arrays' `getOutput`, their
+//! `map.set('k', new Y.Map())`), an XML node, a subdocument, a weak link. Maps' and arrays' `getOutput`, their
 //! observers and deep events give these; `get` / `toJson` keep giving plain values, a nested type
 //! in its JSON form.
 
@@ -10,6 +10,7 @@ use crate::collection::{same_doc, Integrated, SharedCell, SharedCollection};
 use crate::doc::YDoc;
 use crate::map::YMap;
 use crate::text::YText;
+use crate::weak::YWeakLink;
 use crate::xml_elem::YXmlElement;
 use crate::xml_frag::YXmlFragment;
 use crate::xml_text::YXmlText;
@@ -32,11 +33,13 @@ pub enum YOutput {
     XmlText { text: Arc<YXmlText> },
     /// A subdocument.
     Doc { doc: Arc<YDoc> },
+    /// A weak link: a quote, or a link to a map entry.
+    WeakLink { link: Arc<YWeakLink> },
 }
 
 impl YOutput {
-    /// `value` as ykt gives it: plain values as they are, shared types as handles of `doc`. A weak
-    /// link (or anything else ykt has no handle for) comes in its JSON form.
+    /// `value` as ykt gives it: plain values as they are, shared types as handles of `doc`. Anything
+    /// ykt has no handle for comes in its JSON form.
     pub(crate) fn from_out<T: ReadTxn>(value: Out, doc: &Doc, txn: &T) -> Self {
         match value {
             Out::Any(any) => YOutput::Value { value: into_yvalue(&any) },
@@ -47,6 +50,7 @@ impl YOutput {
             Out::YXmlFragment(fragment) => YOutput::XmlFragment { fragment: Arc::new(YXmlFragment::from_ref(fragment, doc.clone())) },
             Out::YXmlText(text) => YOutput::XmlText { text: Arc::new(YXmlText::from_ref(text, doc.clone())) },
             Out::YDoc(subdoc) => YOutput::Doc { doc: Arc::new(YDoc(subdoc)) },
+            Out::YWeakLink(link) => YOutput::WeakLink { link: Arc::new(YWeakLink::from_ref(link, doc.clone())) },
             other => YOutput::Value { value: into_yvalue(&other.to_json(txn)) },
         }
     }
@@ -134,6 +138,7 @@ cell_identity!(YText, inner);
 cell_identity!(YXmlElement, 0);
 cell_identity!(YXmlFragment, 0);
 cell_identity!(YXmlText, 0);
+cell_identity!(YWeakLink, 0);
 integrated_identity!(YMap);
 integrated_identity!(YArray);
 

@@ -19,6 +19,7 @@ class EventsTest {
             is YEvent.ArrayChange -> it.path
             is YEvent.XmlChange -> it.path
             is YEvent.XmlTextChange -> it.path
+            is YEvent.WeakLinkChange -> it.path
         }
     }
 

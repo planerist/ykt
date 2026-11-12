@@ -8,6 +8,9 @@
 //!   children's delta, the text's delta (an XML text) and the attribute changes.
 //! - `YDoc.observeAfterTransaction`, `observeSubdocs`, `observeDestroy`.
 //!
+//! - `observeDeep` on a weak link, and on a type holding one: `WeakLinkChange` when what it links
+//!   to changed, with the linked types' own events.
+//!
 //! The rules of the `observers` module hold: callbacks run on the committing thread with the
 //! document locked; unsubscribing is safe anywhere; a subscription keeps the document's store alive.
 
@@ -18,6 +21,7 @@ use crate::doc::YDoc;
 use crate::map::{key_changes, YEntryChange, YMap};
 use crate::observers::{origin_bytes, subscription_key, text_delta, YSubscription};
 use crate::text::YText;
+use crate::weak::YWeakLink;
 use crate::xml::YXmlChild;
 use crate::xml_text::YXmlText;
 use std::collections::HashMap;
@@ -47,6 +51,8 @@ pub enum YEvent {
     XmlChange { target: YXmlChild, path: Vec<YPathSegment>, children: Vec<YArrayDelta>, attributes: HashMap<String, YEntryChange> },
     /// An XML text: its text's change and its XML attributes'.
     XmlTextChange { target: Arc<YXmlText>, path: Vec<YPathSegment>, delta: Vec<YDelta>, attributes: HashMap<String, YEntryChange> },
+    /// A weak link: what it links to changed (read it after the callback).
+    WeakLinkChange { target: Arc<YWeakLink>, path: Vec<YPathSegment> },
 }
 
 /// What a deep observer gets for a committed transaction that changed the observed type or any
@@ -129,11 +135,11 @@ pub(crate) fn path(path: yrs::types::Path) -> Vec<YPathSegment> {
         .collect()
 }
 
-/// A yrs event in ykt's form; `None` for a weak link's (not in ykt's API).
-pub(crate) fn event(event: &Event, txn: &TransactionMut) -> Option<YEvent> {
+/// A yrs event in ykt's form.
+pub(crate) fn event(event: &Event, txn: &TransactionMut) -> YEvent {
     let doc = txn.doc();
     let at = path(event.path());
-    Some(match event {
+    match event {
         Event::Text(e) => YEvent::TextChange {
             target: Arc::new(YText::new(SharedCollection::integrated(e.target().clone(), doc.clone()))),
             path: at,
@@ -161,9 +167,8 @@ pub(crate) fn event(event: &Event, txn: &TransactionMut) -> Option<YEvent> {
             delta: text_delta(e.delta(txn), txn),
             attributes: key_changes(e.keys(txn), txn),
         },
-        #[allow(unreachable_patterns)]
-        _ => return None,
-    })
+        Event::Weak(e) => YEvent::WeakLinkChange { target: Arc::new(YWeakLink::from_ref(e.as_target(), doc.clone())), path: at },
+    }
 }
 
 /// Subscribes `observer` to `shared`'s deep changes. The subscription keeps `doc`'s store alive.
@@ -176,7 +181,7 @@ where
     let running = active.clone();
     shared.observe_deep(key.clone(), move |txn, events| {
         if running.load(Ordering::SeqCst) {
-            let events = events.iter().filter_map(|e| event(e, txn)).collect();
+            let events = events.iter().map(|e| event(e, txn)).collect();
             observer.on_change(YDeepEvent { events, origin: origin_bytes(txn) });
         }
     });

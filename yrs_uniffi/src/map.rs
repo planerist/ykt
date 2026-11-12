@@ -1,7 +1,7 @@
 //! `YMap`: a shared map of string keys to values (Yjs's `Y.Map`). Values are plain (`YValue`) or
 //! shared types nested in the map — a text, a map, an array, a subdocument — made with `setText`,
 //! `setMap`, `setArray`, `setDoc` and read back as handles with `getOutput`; `get`, `values` and
-//! `toJson` give a nested type in its JSON form.
+//! `toJson` give a nested type in its JSON form. `link` and `setWeakLink`: weak links (`weak` module).
 
 use crate::array::YArray;
 use crate::attrs::{out_into_yvalue, YAttributes, YValue};
@@ -10,6 +10,7 @@ use crate::doc::YDoc;
 use crate::observers::{origin_bytes, subscription_key, ObserveResult, YSubscription};
 use crate::output::YOutput;
 use crate::text::YText;
+use crate::weak::YWeakLink;
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use std::collections::HashMap;
@@ -103,6 +104,30 @@ impl YMap {
         self.0.mutably(txn, |map, txn| {
             check_subdoc_parent(txn)?;
             Ok(Arc::new(YDoc(map.insert(txn, key, subdoc))))
+        })
+    }
+
+    /// Sets `key` to a weak link (see the `weak` module): `link`'s quote — a preliminary link, or a
+    /// copy of one in the document — and returns the new link. `WrongDocument` for another
+    /// document's link, `TypeDeleted` for a deleted one.
+    #[uniffi::method(default(txn = None))]
+    pub fn set_weak_link(&self, key: &str, link: &YWeakLink, txn: Option<Arc<YTransaction>>) -> Result<Arc<YWeakLink>> {
+        self.0.mutably(txn, |map, txn| {
+            let quote = link.quote_for(txn)?;
+            Ok(Arc::new(YWeakLink::from_ref(map.insert(txn, key, quote), self.0.doc.clone())))
+        })
+    }
+
+    /// A preliminary link to `key`'s entry (yrs's `Map::link`), to insert with `setWeakLink` & co.:
+    /// it follows the entry, `deref()` giving its value as it is set again; `null` if the map
+    /// hasn't got `key`.
+    #[uniffi::method(default(txn = None))]
+    pub fn link(&self, key: &str, txn: Option<Arc<YTransaction>>) -> Result<Option<Arc<YWeakLink>>> {
+        self.0.read(txn, |map, txn| {
+            if !map.contains_key(txn, key) {
+                return Ok(None);
+            }
+            Ok(map.link(txn, key).map(|quote| Arc::new(YWeakLink::from_quote(quote, self.0.doc.clone()))))
         })
     }
 

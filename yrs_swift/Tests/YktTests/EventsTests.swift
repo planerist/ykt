@@ -10,6 +10,7 @@ struct EventsTests {
             switch event {
             case .textChange(_, let path, _), .mapChange(_, let path, _), .arrayChange(_, let path, _): return path
             case .xmlChange(_, let path, _, _), .xmlTextChange(_, let path, _, _): return path
+            case .weakLinkChange(_, let path): return path
             }
         }
     }

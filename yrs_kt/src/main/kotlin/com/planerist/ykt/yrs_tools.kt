@@ -180,6 +180,16 @@ val YOutput.asText: YText? get() = (this as? YOutput.Text)?.text
 val YOutput.asMap: YMap? get() = (this as? YOutput.Map)?.map
 val YOutput.asArray: YArray? get() = (this as? YOutput.Array)?.array
 val YOutput.asDoc: YDoc? get() = (this as? YOutput.Doc)?.doc
+val YOutput.asWeakLink: YWeakLink? get() = (this as? YOutput.WeakLink)?.link
+
+/** A weak link's observer: what it links to changed (read the link after the callback). */
+fun YWeakLink.observe(onChange: (YWeakLinkEvent) -> Unit): YSubscription =
+    observe(object : YWeakLinkObserver {
+        override fun onChange(event: YWeakLinkEvent) = onChange(event)
+    })
+
+/** Yjs's `observeDeep` on a weak link: its own change and the linked types'. */
+fun YWeakLink.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
 
 /** The transaction's origin as text (`transaction(origin)` takes a string). */
 val YTextEvent.originString: String? get() = origin?.decodeToString()
@@ -193,3 +203,4 @@ val YXmlEvent.originString: String? get() = origin?.decodeToString()
 val YAfterTransactionEvent.originString: String? get() = origin?.decodeToString()
 val YSubdocsEvent.originString: String? get() = origin?.decodeToString()
 val YAwarenessEvent.originString: String? get() = origin?.decodeToString()
+val YWeakLinkEvent.originString: String? get() = origin?.decodeToString()

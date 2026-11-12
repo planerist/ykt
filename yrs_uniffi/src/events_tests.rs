@@ -84,6 +84,7 @@ fn paths(event: &YDeepEvent) -> Vec<Vec<YPathSegment>> {
         .map(|e| match e {
             YEvent::TextChange { path, .. } | YEvent::MapChange { path, .. } | YEvent::ArrayChange { path, .. } => path.clone(),
             YEvent::XmlChange { path, .. } | YEvent::XmlTextChange { path, .. } => path.clone(),
+            YEvent::WeakLinkChange { path, .. } => path.clone(),
         })
         .collect()
 }

@@ -182,6 +182,24 @@ public extension YOutput {
     var asArray: YArray? { if case .array(let array) = self { return array }; return nil }
     /// The subdocument; nil for anything else.
     var asDoc: YDoc? { if case .doc(let doc) = self { return doc }; return nil }
+    /// The weak link; nil for anything else.
+    var asWeakLink: YWeakLink? { if case .weakLink(let link) = self { return link }; return nil }
+}
+
+public extension YWeakLink {
+    /// A weak link's observer: what it links to changed (read the link after the callback).
+    func observe(_ onChange: @escaping @Sendable (YWeakLinkEvent) -> Void) throws -> YSubscription {
+        try observe(observer: WeakLinkObserverClosure(onChange))
+    }
+
+    /// Yjs's `observeDeep` on a weak link: its own change and the linked types'.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+}
+
+public extension YWeakLinkEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
 }
 
 public extension YTextEvent {
@@ -299,6 +317,12 @@ private final class DestroyObserverClosure: YDestroyObserver, @unchecked Sendabl
     let body: @Sendable (YDestroyEvent) -> Void
     init(_ body: @escaping @Sendable (YDestroyEvent) -> Void) { self.body = body }
     func onDestroy(event: YDestroyEvent) { body(event) }
+}
+
+private final class WeakLinkObserverClosure: YWeakLinkObserver, @unchecked Sendable {
+    let body: @Sendable (YWeakLinkEvent) -> Void
+    init(_ body: @escaping @Sendable (YWeakLinkEvent) -> Void) { self.body = body }
+    func onChange(event: YWeakLinkEvent) { body(event) }
 }
 
 private final class AwarenessObserverClosure: YAwarenessObserver, @unchecked Sendable {

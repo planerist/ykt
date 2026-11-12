@@ -1,6 +1,7 @@
 //! `YArray`: a shared list of values (Yjs's `Y.Array`). Values are plain (`YValue`) or shared types
 //! nested in the array — made with `insertText`, `insertMap`, `insertArray`, `insertDoc` and read
-//! back as handles with `getOutput`; `get` and `toJson` give a nested type in its JSON form.
+//! back as handles with `getOutput`; `get` and `toJson` give a nested type in its JSON form. `quote`
+//! and `insertWeakLink`: weak links (`weak` module).
 
 use crate::attrs::{into_yvalue, out_into_yvalue, YAttributes, YValue};
 use crate::collection::{Integrated, SharedCollection, YBranchId};
@@ -9,6 +10,7 @@ use crate::map::{array_prelim, map_prelim, subdoc_prelim, YMap};
 use crate::observers::{origin_bytes, subscription_key, ObserveResult, YSubscription};
 use crate::output::YOutput;
 use crate::text::YText;
+use crate::weak::{quote_range, YWeakLink};
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -105,6 +107,28 @@ impl YArray {
             check_index(index, array.len(txn))?;
             crate::map::check_subdoc_parent(txn)?;
             Ok(Arc::new(YDoc(array.insert(txn, index, subdoc))))
+        })
+    }
+
+    /// Inserts a weak link at `index` (0 ..= `len()`, else `OutOfBounds`), as `YMap.setWeakLink`,
+    /// and returns it.
+    #[uniffi::method(default(txn = None))]
+    pub fn insert_weak_link(&self, index: u32, link: &YWeakLink, txn: Option<Arc<YTransaction>>) -> Result<Arc<YWeakLink>> {
+        self.0.mutably(txn, |array, txn| {
+            check_index(index, array.len(txn))?;
+            let quote = link.quote_for(txn)?;
+            Ok(Arc::new(YWeakLink::from_ref(array.insert(txn, index, quote), self.0.doc.clone())))
+        })
+    }
+
+    /// A quote of `length` values from `index` on (yrs's `quote`): a preliminary weak link to insert
+    /// with `YMap.setWeakLink` & co. Both ends are in it: values inserted inside the range join it,
+    /// at its edges don't. `OutOfBounds` unless it holds at least one value and lies in the array.
+    #[uniffi::method(default(txn = None))]
+    pub fn quote(&self, index: u32, length: u32, txn: Option<Arc<YTransaction>>) -> Result<Arc<YWeakLink>> {
+        self.0.read(txn, |array, txn| {
+            let quote = quote_range(array, txn, index, length, array.len(txn))?;
+            Ok(Arc::new(YWeakLink::from_quote(quote, self.0.doc.clone())))
         })
     }
 

@@ -27,6 +27,7 @@ mod xml_elem;
 mod xml_text;
 mod xml;
 mod output;
+mod weak;
 mod events;
 mod awareness;
 #[cfg(test)]
@@ -45,5 +46,7 @@ mod awareness_tests;
 mod xml_tests;
 #[cfg(test)]
 mod out_of_order_tests;
+#[cfg(test)]
+mod weak_tests;
 
 uniffi::setup_scaffolding!();

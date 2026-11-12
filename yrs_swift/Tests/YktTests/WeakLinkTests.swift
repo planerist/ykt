@@ -2,7 +2,8 @@ import Foundation
 import Testing
 import Ykt
 
-/// Weak links: to map entries (`YMap.link`) and quotes of array ranges (`YArray.quote`), inserted
+/// Weak links: to map entries (`YMap.link`) and quotes of array and text ranges (`YArray.quote`,
+/// `YText.quote`), inserted
 /// into maps, arrays and texts, read with `unquote` / `deref` locally and on a replica after v2
 /// updates; bounds and errors; observers, and callbacks that may not read the document.
 struct WeakLinkTests {
@@ -110,5 +111,44 @@ struct WeakLinkTests {
         guard case .mapChange(let target, _, _)? = deep.all.first?.events.first else { Issue.record("not a map change"); return }
         #expect(target == meta)
         _ = deepSub
+    }
+
+    @Test func textQuote() throws {
+        let a = YDoc(options: YDocOptions(clientId: 1))
+        let text = try a.getText(name: "body")
+        try text.insert(index: 0, chunk: "hello world")
+        let quote = try text.quote(index: 6, length: 5)
+        expectYError(YError.NotIntegrated) { try quote.toText() }
+        let excerpt = try a.getMap(name: "notes").setWeakLink(key: "excerpt", link: quote)
+        try text.formatWithAttributes(index: 6, length: 5, attributes: ["bold": .bool(true)])
+        #expect(try excerpt.toText() == "world", "formatting left out")
+        try text.insert(index: 8, chunk: "--")
+        try text.insert(index: 6, chunk: "<") // at its edges: not quoted
+        try text.push(chunk: ">")
+        #expect(try excerpt.toText() == "wo--rld")
+
+        let b = YDoc(options: YDocOptions(clientId: 2))
+        try sync(a, b)
+        let replica = try #require(try b.getMap(name: "notes").getOutput(key: "excerpt")?.asWeakLink)
+        #expect(try replica.toText() == "wo--rld")
+        try b.getText(name: "body").delete(index: 9, length: 2)
+        try sync(b, a)
+        #expect(try excerpt.toText() == "world")
+
+        try text.delete(index: 0, length: text.length())
+        #expect(try excerpt.toText() == "")
+        try text.insert(index: 0, chunk: "world")
+        #expect(try excerpt.toText() == "", "a quote of deleted text stays empty")
+        expectYError(YError.OutOfBounds) { try text.quote(index: 0, length: 0) }
+        expectYError(YError.OutOfBounds) { try text.quote(index: 3, length: 3) }
+        expectYError(YError.NotIntegrated) { try YText.newWithText(init: "x").quote(index: 0, length: 1) }
+
+        let results = Box<String>()
+        let sub = try text.observe { _ in
+            do { _ = try text.quote(index: 0, length: 1); results.append("worked") } catch { results.append(caseName(error as! YError)) }
+        }
+        try text.push(chunk: "!")
+        #expect(results.all == ["Locked"])
+        _ = sub
     }
 }

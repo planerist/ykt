@@ -1,5 +1,6 @@
-//! Weak links through ykt's API: links to map entries (`YMap.link`) and quotes of array ranges
-//! (`YArray.quote`); inserting them into maps, arrays and texts; reading them (`unquote`, `deref`)
+//! Weak links through ykt's API: links to map entries (`YMap.link`) and quotes of array and text
+//! ranges (`YArray.quote`, `YText.quote`); inserting them into maps, arrays and texts; reading them
+//! (`unquote`, `deref`, `toText`)
 //! locally and on a replica after v2 updates, with edits inside the quoted range from either side;
 //! their bounds and errors; their observers, and what a callback may not do.
 
@@ -9,6 +10,8 @@ use crate::delta::YDelta;
 use crate::doc::{YDoc, YDocOptions};
 use crate::events::{YDeepEvent, YDeepObserver, YEvent, YPathSegment};
 use crate::map::YMap;
+use crate::observers::{YTextEvent, YTextObserver};
+use crate::text::YText;
 use crate::output::YOutput;
 use crate::snapshots::{apply_update_v2, encode_state_as_update_v2, encode_state_vector};
 use crate::tools::Error;
@@ -328,4 +331,87 @@ fn inside_a_callback_links_and_quotes_are_locked() {
     let quote = list.quote(0, 1, Some(txn.clone())).unwrap();
     assert_eq!(map.set_weak_link("first", &quote, Some(txn.clone())).unwrap().deref(Some(txn.clone())).unwrap(), Some(out(n(1.0))));
     txn.commit().unwrap();
+}
+
+#[test]
+fn a_text_quote_follows_its_range_across_replicas() {
+    let a = doc(1);
+    let text = a.get_text("body").unwrap();
+    text.insert(0, "hello world", None, None).unwrap();
+    let quote = text.quote(6, 5, None).unwrap();
+    assert!(quote.prelim());
+    assert!(matches!(quote.to_string(None), Err(Error::NotIntegrated)));
+    let excerpt = a.get_map("notes").unwrap().set_weak_link("excerpt", &quote, None).unwrap();
+    text.format(6, 5, r#"{"bold":true}"#.into(), None).unwrap();
+    assert_eq!(excerpt.to_string(None).unwrap(), "world", "formatting left out");
+    assert_eq!(values(&excerpt), "world".chars().map(|c| out(s(&c.to_string()))).collect::<Vec<_>>(), "its characters");
+    assert_eq!(excerpt.deref(None).unwrap(), Some(out(s("w"))));
+
+    // Inside it joins; at either edge doesn't.
+    text.insert(8, "--", None, None).unwrap();
+    text.insert(6, "<", None, None).unwrap();
+    text.push(">", None, None).unwrap();
+    assert_eq!(text.to_string(None).unwrap(), "hello <wo--rld>");
+    assert_eq!(excerpt.to_string(None).unwrap(), "wo--rld");
+
+    // On a replica after a v2 update; its edits inside reach both.
+    let b = doc(2);
+    sync(&a, &b, None);
+    let replica = link_of(b.get_map("notes").unwrap().get_output("excerpt", None).unwrap());
+    assert_eq!(replica.to_string(None).unwrap(), "wo--rld");
+    let b_text = b.get_text("body").unwrap();
+    b_text.delete(9, 2, None).unwrap();
+    b_text.insert(9, "!", None, None).unwrap();
+    sync(&b, &a, Some("server"));
+    assert_eq!(excerpt.to_string(None).unwrap(), "wo!rld");
+    assert_eq!(replica.to_string(None).unwrap(), "wo!rld");
+
+    // Its text deleted, the quote is empty for good.
+    text.delete(0, text.length(None).unwrap(), None).unwrap();
+    assert_eq!(excerpt.to_string(None).unwrap(), "");
+    assert_eq!(values(&excerpt), vec![]);
+    assert_eq!(excerpt.deref(None).unwrap(), None);
+    text.insert(0, "world", None, None).unwrap();
+    assert_eq!(excerpt.to_string(None).unwrap(), "");
+    sync(&a, &b, None);
+    assert_eq!(replica.to_string(None).unwrap(), "");
+}
+
+#[test]
+fn text_quotes_bounds_and_errors() {
+    let doc = doc(1);
+    let text = Arc::new(doc.get_text("body").unwrap());
+    assert!(matches!(text.quote(0, 1, None), Err(Error::OutOfBounds)), "an empty text");
+    text.insert(0, "a😀b", None, None).unwrap(); // the emoji is two UTF-16 units
+    for (index, length) in [(0, 0), (1, 0), (4, 1), (2, 3), (0, 5), (1, u32::MAX)] {
+        assert!(matches!(text.quote(index, length, None), Err(Error::OutOfBounds)), "{index}, {length}");
+    }
+    let notes = doc.get_map("notes").unwrap();
+    assert_eq!(notes.set_weak_link("all", &text.quote(0, 4, None).unwrap(), None).unwrap().to_string(None).unwrap(), "a😀b");
+    assert_eq!(notes.set_weak_link("emoji", &text.quote(1, 2, None).unwrap(), None).unwrap().to_string(None).unwrap(), "😀");
+    assert!(matches!(YText::new_with_text(Some("x".into())).quote(0, 1, None), Err(Error::NotIntegrated)));
+
+    // A quote embedded in its own text, before what it quotes.
+    let inside = text.insert_embed_weak_link(0, &text.quote(3, 1, None).unwrap(), None, None).unwrap();
+    assert_eq!(inside.to_string(None).unwrap(), "b");
+    assert_eq!(text.to_string(None).unwrap(), "a😀b", "an embed has no text");
+
+    // A link to a map entry or array values has no text.
+    notes.set("k", s("v"), None).unwrap();
+    assert_eq!(notes.set_weak_link("toK", &notes.link("k", None).unwrap().unwrap(), None).unwrap().to_string(None).unwrap(), "");
+    let list = doc.get_array("list").unwrap();
+    list.push(vec![s("text in an array")], None).unwrap();
+    assert_eq!(notes.set_weak_link("toList", &list.quote(0, 1, None).unwrap(), None).unwrap().to_string(None).unwrap(), "");
+
+    // Inside a callback, Locked.
+    struct Inside(Arc<YText>, Mutex<Vec<bool>>);
+    impl YTextObserver for Inside {
+        fn on_change(&self, _event: YTextEvent) {
+            self.1.lock().unwrap().push(matches!(self.0.quote(0, 1, None), Err(Error::Locked)));
+        }
+    }
+    let heard = Arc::new(Inside(text.clone(), Mutex::new(vec![])));
+    let _sub = text.observe(heard.clone()).unwrap();
+    text.push("!", None, None).unwrap();
+    assert_eq!(*heard.1.lock().unwrap(), vec![true]);
 }

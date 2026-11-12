@@ -8,7 +8,7 @@ use crate::snapshots::YSnapshot;
 use crate::sticky::{YAssoc, YStickyIndex};
 use crate::tools::{check_range, utf16_len, utf16_offset, Error, Result};
 use crate::transaction::YTransaction;
-use crate::weak::YWeakLink;
+use crate::weak::{quote_range, YWeakLink};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -428,6 +428,20 @@ impl YText {
     #[uniffi::method(default(txn=None))]
     pub fn sticky_index(&self, index: u32, assoc: YAssoc, txn: Option<Arc<YTransaction>>) -> Result<YStickyIndex> {
         integrated_of(&self.inner)?.read(txn, |text, view| YStickyIndex::at(text, view, index, text.len(view), assoc))
+    }
+
+    /// A quote of `length` units from `index` on (yrs's `quote`): a preliminary weak link to insert
+    /// with `YMap.setWeakLink` & co., whose `toText()` gives the quoted text as it is then. Both ends
+    /// are in it: what is inserted inside the range joins it, at its edges doesn't. `OutOfBounds`
+    /// unless it holds at least one unit and lies in the text; `NotIntegrated` for a preliminary
+    /// text.
+    #[uniffi::method(default(txn=None))]
+    pub fn quote(&self, index: u32, length: u32, txn: Option<Arc<YTransaction>>) -> Result<Arc<YWeakLink>> {
+        let c = integrated_of(&self.inner)?;
+        c.read(txn, |text, view| {
+            let quote = quote_range(text, view, index, length, text.len(view))?;
+            Ok(Arc::new(YWeakLink::from_quote(quote, c.doc.clone())))
+        })
     }
 
     /// Applies a delta (Quill's, Yjs's `applyDelta`): retains (formatting with their attributes),

@@ -7,7 +7,8 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Weak links: to map entries (`YMap.link`) and quotes of array ranges (`YArray.quote`), inserted
+ * Weak links: to map entries (`YMap.link`) and quotes of array and text ranges (`YArray.quote`,
+ * `YText.quote`), inserted
  * into maps, arrays and texts, read with `unquote` / `deref` locally and on a replica after v2
  * updates; bounds and errors; observers, and callbacks that may not read the document.
  */
@@ -118,5 +119,41 @@ class WeakLinkTest {
         val deep = Collections.synchronizedList(mutableListOf<YDeepEvent>())
         toMeta.observeDeep { deep += it }.use { meta.set("color", str("red")) }
         assertEquals(meta, (deep.single().events.single() as YEvent.MapChange).target)
+    }
+
+    @Test
+    fun textQuote() {
+        val a = YDoc(YDocOptions(1u))
+        val text = a.getText("body")
+        text.insert(0u, "hello world")
+        val quote = text.quote(6u, 5u)
+        assertThrows<YException.NotIntegrated> { quote.toText() }
+        val excerpt = a.getMap("notes").setWeakLink("excerpt", quote)
+        text.formatWithAttributes(6u, 5u, mapOf("bold" to YValue.Bool(true)))
+        assertEquals("world", excerpt.toText(), "formatting left out")
+        text.insert(8u, "--")
+        text.insert(6u, "<") // at its edges: not quoted
+        text.push(">")
+        assertEquals("wo--rld", excerpt.toText())
+
+        val b = YDoc(YDocOptions(2u))
+        sync(a, b)
+        val replica = b.getMap("notes").getOutput("excerpt")!!.asWeakLink!!
+        assertEquals("wo--rld", replica.toText())
+        b.getText("body").delete(9u, 2u)
+        sync(b, a)
+        assertEquals("world", excerpt.toText())
+
+        text.delete(0u, text.length())
+        assertEquals("", excerpt.toText())
+        text.insert(0u, "world")
+        assertEquals("", excerpt.toText(), "a quote of deleted text stays empty")
+        assertThrows<YException.OutOfBounds> { text.quote(0u, 0u) }
+        assertThrows<YException.OutOfBounds> { text.quote(3u, 3u) }
+        assertThrows<YException.NotIntegrated> { YText.newWithText("x").quote(0u, 1u) }
+
+        val locked = mutableListOf<Boolean>()
+        text.observe { locked += runCatching { text.quote(0u, 1u) }.exceptionOrNull() is YException.Locked }.use { text.push("!") }
+        assertEquals(listOf(true), locked)
     }
 }

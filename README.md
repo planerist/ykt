@@ -80,6 +80,7 @@ text.formatWithAttributes(index, length, mapOf("bold" to YValue.Null))  // null 
 text.delete(index, length)
 text.insertEmbed(index, YValue.AttrMap(mapOf("mention" to YValue.String("note://42"))))
 text.toText(); text.toDelta(); text.applyDelta(delta); text.length()
+text.quote(index, length)                                 // a weak link to these units: see "Weak links"
 text.id()                                                 // the same on every replica
 // Indexes are UTF-16 units. Attributes can also be JSON strings: insert(i, s, "{\"bold\":true}").
 ```
@@ -134,6 +135,8 @@ pinned.unquote()                                 // the quoted values now, as YO
 val current = settings.setWeakLink("current", settings.link("theme")!!)   // a link to a map entry…
 current.deref()                                  // …its value now; null once the entry is deleted
 note.getOutput("pinned")?.asWeakLink             // on a replica too; observe / observeDeep hear changes
+val excerpt = note.setWeakLink("excerpt", text.quote(6u, 5u))   // a text's units 6 to 10…
+excerpt.toText()                                 // …their text now, edits inside included
 ```
 As yrs's [weak links](https://docs.rs/yrs/0.28.0/yrs/#weak-links-and-quotations); Yjs has none yet. `get` and `toJson` give a link as `null`.
 
@@ -191,7 +194,6 @@ One type: `YError` in Swift, `YException` in Kotlin. Match on the case, not on t
 ## Planned
 
 - [ ] Kotlin Multiplatform
-- [ ] `YText.quote`
 
 ## Releasing
 

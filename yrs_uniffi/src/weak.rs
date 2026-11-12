@@ -1,14 +1,14 @@
-//! `YWeakLink`: a link to a map entry or a quote of a range of an array (yrs's weak links). It
-//! follows what it links to: a map entry's value as it changes, an array's values in the range,
-//! values inserted inside it by any replica included.
+//! `YWeakLink`: a link to a map entry or a quote of a range of an array or a text (yrs's weak
+//! links). It follows what it links to: a map entry's value as it changes, the values or the text
+//! in the range, what any replica inserts inside it included.
 //!
-//! - Making one: `YMap.link(key)`, `YArray.quote(index, length)` give a preliminary link (a quote
-//!   of the document, not in it yet).
+//! - Making one: `YMap.link(key)`, `YArray.quote(index, length)`, `YText.quote(index, length)`
+//!   give a preliminary link (a quote of the document, not in it yet).
 //! - Inserting it: `YMap.setWeakLink`, `YArray.insertWeakLink`, `YText.insertEmbedWeakLink` put it
 //!   into the document and give its integrated handle. A preliminary link can be inserted any number
 //!   of times; an integrated one is copied (the new link quotes the same).
-//! - Reading it: `getOutput` (`YOutput.WeakLink`), then `unquote()` (the quoted values) and
-//!   `deref()` (a map entry's value). `get` / `toJson` give a link as `null`, its JSON form in yrs.
+//! - Reading it: `getOutput` (`YOutput.WeakLink`), then `unquote()` (the quoted values), `toText()`
+//!   (a text quote's text) and `deref()` (a map entry's value). `get` / `toJson` give a link as `null`, its JSON form in yrs.
 //! - Observing it: `observe` hears what changed in the quoted range or the linked entry; `observeDeep`
 //!   also hears the types inside it.
 
@@ -24,7 +24,7 @@ use std::sync::Arc;
 use yrs::branch::BranchPtr;
 use yrs::types::weak::WeakEvent;
 use yrs::types::TypeRef;
-use yrs::{ArrayRef, Assoc, Doc, MapRef, Observable, Out, Quotable, ReadTxn, StickyIndex, TransactionMut, WeakPrelim, WeakRef};
+use yrs::{ArrayRef, Assoc, Doc, GetString, MapRef, Observable, Out, Quotable, ReadTxn, StickyIndex, TextRef, TransactionMut, WeakPrelim, WeakRef, XmlTextRef};
 
 /// A quote not in its document yet, with the document it quotes.
 #[derive(Clone)]
@@ -33,9 +33,9 @@ pub(crate) struct PrelimLink {
     pub doc: Doc,
 }
 
-/// A weak link (see the module docs): preliminary, from `YMap.link` / `YArray.quote`, or in the
-/// document, from inserting one or from `getOutput`. Two handles of the same link compare equal; a
-/// preliminary one is equal only to itself.
+/// A weak link (see the module docs): preliminary, from `YMap.link` / `YArray.quote` /
+/// `YText.quote`, or in the document, from inserting one or from `getOutput`. Two handles of the
+/// same link compare equal; a preliminary one is equal only to itself.
 #[derive(uniffi::Object)]
 #[uniffi::export(Eq, Hash)]
 #[repr(transparent)]
@@ -157,6 +157,22 @@ impl YWeakLink {
                 values.extend(deref(link, view));
             }
             Ok(values.into_iter().map(|value| YOutput::from_out(value, &c.doc, view)).collect())
+        })
+    }
+
+    /// The quoted text as it is now, as its type's `toText` gives it — a text's string (formatting
+    /// left out), an XML text's as XML — what was inserted inside the range included; empty once it
+    /// is deleted, and for a link to a map entry or to array values. `NotIntegrated` for a
+    /// preliminary link.
+    #[uniffi::method(name = "toText", default(txn = None))]
+    pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {
+        let c = self.integrated()?;
+        c.read(txn, |link, view| {
+            Ok(match quoted(link, view) {
+                Quoted::MapEntry => String::new(),
+                Quoted::XmlText => WeakRef::<XmlTextRef>::from(link.clone()).get_string(view),
+                Quoted::Sequence => WeakRef::<TextRef>::from(link.clone()).get_string(view),
+            })
         })
     }
 

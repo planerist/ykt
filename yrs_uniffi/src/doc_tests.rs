@@ -122,3 +122,36 @@ fn getters_throw_inside_an_update_observer_of_a_remote_update() {
         assert_eq!(b.get_text("t").unwrap().to_string(None).unwrap(), "hi");
     });
 }
+
+#[derive(Default)]
+struct Commits(Mutex<usize>);
+
+impl crate::observers::YTransactionCleanupObserver for Commits {
+    fn on_cleanup(&self, _event: crate::observers::YTransactionCleanupEvent) {
+        *self.0.lock().unwrap() += 1;
+    }
+}
+
+#[test]
+fn getting_an_existing_root_commits_nothing_and_a_remote_one_becomes_typed() {
+    within(|| {
+        let doc = doc(1);
+        doc.get_text("t").unwrap();
+        let commits = Arc::new(Commits::default());
+        let _sub = doc.observe_transaction_cleanup(commits.clone()).unwrap();
+        doc.get_text("t").unwrap();
+        doc.get_text("t").unwrap();
+        assert_eq!(*commits.0.lock().unwrap(), 0, "no empty transactions for observers");
+        doc.get_map("m").unwrap();
+        doc.get_map("m").unwrap();
+        assert_eq!(*commits.0.lock().unwrap(), 1, "creating the map is one");
+
+        // A root that came in an update has no type until it is got: its observers then work.
+        let a = self::doc(2);
+        a.get_text("t").unwrap().insert(0, "hi", None, None).unwrap();
+        let b = self::doc(3);
+        let update = crate::snapshots::encode_state_as_update_v2(&a, None).unwrap();
+        crate::snapshots::apply_update_v2(&b, &update, None).unwrap();
+        assert_eq!(b.get_text("t").unwrap().to_string(None).unwrap(), "hi");
+    });
+}

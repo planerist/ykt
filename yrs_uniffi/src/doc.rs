@@ -3,6 +3,9 @@ use crate::observers::{
     encode_delete_set, origin_bytes, state_map, subscription_key, ObserveResult, YSubscription,
     YTransactionCleanupEvent, YTransactionCleanupObserver, YUpdateEvent, YUpdateObserver,
 };
+use crate::events::{
+    YAfterTransactionEvent, YAfterTransactionObserver, YDestroyEvent, YDestroyObserver, YSubdocsEvent, YSubdocsObserver,
+};
 use crate::text::YText;
 use crate::tools::Error;
 use crate::tools::Result;
@@ -11,8 +14,8 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::block::ClientID;
-use yrs::types::TYPE_REFS_DOC;
-use yrs::{Doc, OffsetKind, Options, Transact};
+use yrs::types::{TypeRef, TYPE_REFS_DOC};
+use yrs::{Doc, OffsetKind, Options, ReadTxn, Transact};
 use crate::xml_frag::YXmlFragment;
 use crate::array::YArray;
 use crate::collection::Integrated;
@@ -86,17 +89,54 @@ impl YDoc {
         TYPE_REFS_DOC
     }
 
-    /// Checks if a document is a preliminary type. It returns false, if current document
-    /// is already a sub-document of another document.
-    #[inline]
-    pub fn prelim(&self) -> bool {
-        self.0.parent_doc().is_none()
+    /// Whether the document isn't a subdocument of another one (it can be inserted as one). Throws
+    /// `Locked` while it is locked (yrs would wait for it).
+    pub fn prelim(&self) -> Result<bool> {
+        Ok(self.parent()?.is_none())
     }
 
-    /// Returns a parent document of this document or null if current document is not sub-document.
-    pub fn parent_doc(&self) -> Option<Arc<YDoc>> {
-        let doc = self.0.parent_doc()?;
-        Some(Arc::new(YDoc(doc)))
+    /// The document this one is a subdocument of, `null` for none. Throws `Locked` while it is
+    /// locked.
+    pub fn parent_doc(&self) -> Result<Option<Arc<YDoc>>> {
+        Ok(self.parent()?.map(|doc| Arc::new(YDoc(doc))))
+    }
+
+    /// Asks to load this subdocument (Yjs's `doc.load()`): `shouldLoad` turns on, and the parent's
+    /// subdocument observers hear it among `loaded`. Nothing for a document that isn't a
+    /// subdocument. Throws `Locked` while it or its parent is locked.
+    pub fn load(&self) -> Result<()> {
+        match self.parent()? {
+            Some(parent) => {
+                let mut parent_txn = parent.try_transact_mut().map_err(|_| Error::Locked)?;
+                self.0.load(&mut parent_txn);
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+
+    /// Destroys the document (Yjs's `doc.destroy()`; `destroyDoc` here, as `destroy` frees a
+    /// handle in Kotlin): its destroy observers run and its
+    /// subscriptions end; a subdocument is replaced in its parent by a new, unloaded instance (the
+    /// parent's subdocument observers hear it removed and added). Throws `Locked` while it, its
+    /// parent or one of its subdocuments is locked (yrs would wait for them).
+    #[uniffi::method(name = "destroyDoc")]
+    pub fn destroy(&self) -> Result<()> {
+        let parent = {
+            let txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
+            for subdoc in txn.subdocs() {
+                drop(subdoc.try_transact_mut().map_err(|_| Error::Locked)?);
+            }
+            txn.parent_doc()
+        };
+        match parent {
+            Some(parent) => {
+                let mut parent_txn = parent.try_transact_mut().map_err(|_| Error::Locked)?;
+                self.0.destroy(Some(&mut parent_txn));
+            }
+            None => self.0.destroy(None),
+        }
+        Ok(())
     }
 
     /// Gets unique peer identifier of this `YDoc` instance.
@@ -157,15 +197,19 @@ impl YDoc {
     }
 
     /// Returns the `YText` root type of this `name`, creating it if the document hasn't got it (Yjs's
-    /// `doc.getText`). The same name gives the same text, whichever handle is used. Throws while the
+    /// `doc.getText`; only creating it is a transaction). The same name gives the same text, whichever handle is used. Throws while the
     /// document is locked (an open transaction, a callback) instead of waiting for it: yrs's
     /// `get_or_insert_text` would wait for good.
     ///
     /// A root of this name that is of another type is read as a text.
     pub fn get_text(&self, name: &str) -> Result<YText> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
-        let text = TextRef::root(name).get_or_create(&mut txn);
-        drop(txn);
+        // A root another client made (an update) has no type yet: making it one takes a write
+        // transaction, as does a new root. The read transaction ends here.
+        let existing = self.0.try_transact().map_err(|_| Error::Locked)?.get_text(name).filter(|r| matches!(AsRef::<yrs::branch::Branch>::as_ref(r).type_ref(), TypeRef::Text));
+        let text = match existing {
+            Some(text) => text,
+            None => TextRef::root(name).get_or_create(&mut self.0.try_transact_mut().map_err(|_| Error::Locked)?),
+        };
         Ok(YText::new(SharedCollection::integrated(text, self.0.clone())))
     }
 
@@ -173,9 +217,13 @@ impl YDoc {
     /// (Yjs's `doc.getXmlFragment`). Throws while the document is locked (an open transaction, a
     /// callback) instead of waiting for it.
     pub fn get_xml_fragment(&self, name: &str) -> Result<YXmlFragment> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
-        let fragment = XmlFragmentRef::root(name).get_or_create(&mut txn);
-        drop(txn);
+        // A root another client made (an update) has no type yet: making it one takes a write
+        // transaction, as does a new root. The read transaction ends here.
+        let existing = self.0.try_transact().map_err(|_| Error::Locked)?.get_xml_fragment(name).filter(|r| matches!(AsRef::<yrs::branch::Branch>::as_ref(r).type_ref(), TypeRef::XmlFragment));
+        let fragment = match existing {
+            Some(fragment) => fragment,
+            None => XmlFragmentRef::root(name).get_or_create(&mut self.0.try_transact_mut().map_err(|_| Error::Locked)?),
+        };
         Ok(YXmlFragment::new_with_collection(SharedCollection::integrated(fragment, self.0.clone())))
     }
 
@@ -183,9 +231,13 @@ impl YDoc {
     /// `doc.getMap`). Throws while the document is locked (an open transaction, a callback) instead
     /// of waiting for it.
     pub fn get_map(&self, name: &str) -> Result<YMap> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
-        let map = MapRef::root(name).get_or_create(&mut txn);
-        drop(txn);
+        // A root another client made (an update) has no type yet: making it one takes a write
+        // transaction, as does a new root. The read transaction ends here.
+        let existing = self.0.try_transact().map_err(|_| Error::Locked)?.get_map(name).filter(|r| matches!(AsRef::<yrs::branch::Branch>::as_ref(r).type_ref(), TypeRef::Map));
+        let map = match existing {
+            Some(map) => map,
+            None => MapRef::root(name).get_or_create(&mut self.0.try_transact_mut().map_err(|_| Error::Locked)?),
+        };
         Ok(YMap(Integrated::new(map, self.0.clone())))
     }
 
@@ -193,9 +245,13 @@ impl YDoc {
     /// (Yjs's `doc.getArray`). Throws while the document is locked (an open transaction, a
     /// callback) instead of waiting for it.
     pub fn get_array(&self, name: &str) -> Result<YArray> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
-        let array = ArrayRef::root(name).get_or_create(&mut txn);
-        drop(txn);
+        // A root another client made (an update) has no type yet: making it one takes a write
+        // transaction, as does a new root. The read transaction ends here.
+        let existing = self.0.try_transact().map_err(|_| Error::Locked)?.get_array(name).filter(|r| matches!(AsRef::<yrs::branch::Branch>::as_ref(r).type_ref(), TypeRef::Array));
+        let array = match existing {
+            Some(array) => array,
+            None => ArrayRef::root(name).get_or_create(&mut self.0.try_transact_mut().map_err(|_| Error::Locked)?),
+        };
         Ok(YArray(Integrated::new(array, self.0.clone())))
     }
 
@@ -253,9 +309,76 @@ impl YDoc {
         let doc = self.0.clone();
         Ok(YSubscription::new(active, move || doc.unobserve_transaction_cleanup(key).unwrap_or(false)))
     }
+
+    /// Calls `observer` after every committed transaction (an empty one too), after the types'
+    /// observers and before the cleanup, with the state vectors before and after it, what it
+    /// deleted and its origin (Yjs's `doc.on('afterTransaction')`). Fails while the document is
+    /// locked.
+    pub fn observe_after_transaction(&self, observer: Arc<dyn YAfterTransactionObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_after_transaction(key.clone(), move |txn| {
+                if running.load(Ordering::SeqCst) {
+                    observer.on_after_transaction(YAfterTransactionEvent {
+                        before_state: state_map(txn.before_state()),
+                        after_state: state_map(txn.after_state()),
+                        delete_set: encode_delete_set(txn.delete_set()),
+                        origin: origin_bytes(txn),
+                    });
+                }
+            })
+            .map_err(|_| Error::Locked)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_after_transaction(key).unwrap_or(false)))
+    }
+
+    /// Calls `observer` after a committed transaction that added, removed or asked to load
+    /// subdocuments of this document (Yjs's `doc.on('subdocs')`). Fails while the document is
+    /// locked.
+    pub fn observe_subdocs(&self, observer: Arc<dyn YSubdocsObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_subdocs(key.clone(), move |txn, event| {
+                if running.load(Ordering::SeqCst) {
+                    let docs = |iter: yrs::SubdocsEventIter| iter.map(|d| Arc::new(YDoc(d.clone()))).collect();
+                    observer.on_subdocs(YSubdocsEvent {
+                        added: docs(event.added()),
+                        removed: docs(event.removed()),
+                        loaded: docs(event.loaded()),
+                        origin: origin_bytes(txn),
+                    });
+                }
+            })
+            .map_err(|_| Error::Locked)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_subdocs(key).unwrap_or(false)))
+    }
+
+    /// Calls `observer` when the document is destroyed (`destroy()`, Yjs's `doc.on('destroy')`).
+    /// Fails while the document is locked.
+    pub fn observe_destroy(&self, observer: Arc<dyn YDestroyObserver>) -> ObserveResult {
+        let (key, active, running) = Self::new_subscription();
+        self.0
+            .observe_destroy(key.clone(), move |_txn, doc| {
+                if running.load(Ordering::SeqCst) {
+                    observer.on_destroy(YDestroyEvent { guid: doc.guid().to_string() });
+                }
+            })
+            .map_err(|_| Error::Locked)?;
+        active.store(true, Ordering::SeqCst);
+        let doc = self.0.clone();
+        Ok(YSubscription::new(active, move || doc.unobserve_destroy(key).unwrap_or(false)))
+    }
 }
 
 impl YDoc {
+    /// The parent document, read without waiting for the lock.
+    fn parent(&self) -> Result<Option<Doc>> {
+        Ok(self.0.try_transact().map_err(|_| Error::Locked)?.parent_doc())
+    }
+
     /// A subscription's key and its on/off switch (the callback's copy and the handle's). It is
     /// off until the callback is registered: yrs registers it in a transaction of its own, whose
     /// commit would otherwise reach the new callback (an empty cleanup event nobody made).

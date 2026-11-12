@@ -396,6 +396,15 @@ impl YText {
         }))
     }
 
+    /// Calls `observer` after every committed transaction that changed this text (its embedded types included) or any shared
+    /// type in it, with an event per changed type (target, path from here, change) and the
+    /// transaction's origin (Yjs's `observeDeep`). The rules of `observe` hold.
+    pub fn observe_deep(&self, observer: Arc<dyn crate::events::YDeepObserver>) -> ObserveResult {
+        let c = integrated_of(&self.inner)?;
+        let text: TextRef = c.read(None, |text, _| Ok(text.clone()))?;
+        Ok(crate::events::observe_deep(text, c.doc.clone(), observer))
+    }
+
     /// A relative position at `index` (UTF-16 units) of this text, as Yjs's
     /// `createRelativePositionFromTypeIndex`: it keeps its place through later edits, local and
     /// remote (see `YStickyIndex`). `assoc` says which neighbour it sticks to. Throws `OutOfBounds`

@@ -172,6 +172,14 @@ impl YMap {
         self.0.id().into()
     }
 
+    /// Calls `observer` after every committed transaction that changed this map or any shared
+    /// type in it, with an event per changed type (target, path from here, change) and the
+    /// transaction's origin (Yjs's `observeDeep`). The rules of `observe` hold.
+    pub fn observe_deep(&self, observer: Arc<dyn crate::events::YDeepObserver>) -> ObserveResult {
+        let shared: MapRef = self.0.read(None, |shared, _| Ok(shared.clone()))?;
+        Ok(crate::events::observe_deep(shared, self.0.doc.clone(), observer))
+    }
+
     /// Calls `observer` after every committed transaction that changed this map, with the changed
     /// keys and the transaction's origin (Yjs's `ymap.observe`). The callback runs on the
     /// committing thread while the document is still locked: it must not read or write the

@@ -77,6 +77,88 @@ public extension YUndoManager {
     }
 }
 
+// MARK: - Deep and XML observers, document events
+
+public extension YText {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+}
+
+public extension YMap {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+}
+
+public extension YArray {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+}
+
+public extension YXmlFragment {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+
+    /// Yjs's `observe` on an XML node: its children's, text's and attributes' changes.
+    func observe(_ onChange: @escaping @Sendable (YXmlEvent) -> Void) throws -> YSubscription {
+        try observe(observer: XmlObserverClosure(onChange))
+    }
+}
+
+public extension YXmlElement {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+
+    /// Yjs's `observe` on an XML node: its children's, text's and attributes' changes.
+    func observe(_ onChange: @escaping @Sendable (YXmlEvent) -> Void) throws -> YSubscription {
+        try observe(observer: XmlObserverClosure(onChange))
+    }
+}
+
+public extension YXmlText {
+    /// Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target,
+    /// its path from here and its change, after every committed transaction that changed any.
+    func observeDeep(_ onChange: @escaping @Sendable (YDeepEvent) -> Void) throws -> YSubscription {
+        try observeDeep(observer: DeepObserverClosure(onChange))
+    }
+
+    /// Yjs's `observe` on an XML node: its children's, text's and attributes' changes.
+    func observe(_ onChange: @escaping @Sendable (YXmlEvent) -> Void) throws -> YSubscription {
+        try observe(observer: XmlObserverClosure(onChange))
+    }
+}
+
+public extension YDoc {
+    /// Yjs's `doc.on('afterTransaction')`: every committed transaction, before its cleanup.
+    func observeAfterTransaction(_ onEvent: @escaping @Sendable (YAfterTransactionEvent) -> Void) throws -> YSubscription {
+        try observeAfterTransaction(observer: AfterTransactionObserverClosure(onEvent))
+    }
+
+    /// Yjs's `doc.on('subdocs')`: subdocuments added, removed, asked to load.
+    func observeSubdocs(_ onEvent: @escaping @Sendable (YSubdocsEvent) -> Void) throws -> YSubscription {
+        try observeSubdocs(observer: SubdocsObserverClosure(onEvent))
+    }
+
+    /// Yjs's `doc.on('destroy')`.
+    func observeDestroy(_ onEvent: @escaping @Sendable (YDestroyEvent) -> Void) throws -> YSubscription {
+        try observeDestroy(observer: DestroyObserverClosure(onEvent))
+    }
+}
+
 // MARK: - Nested shared types
 
 public extension YOutput {
@@ -112,6 +194,22 @@ public extension YMapEvent {
 }
 
 public extension YArrayEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YDeepEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YXmlEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YAfterTransactionEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YSubdocsEvent {
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
 }
 
@@ -155,4 +253,34 @@ private final class UndoPopObserverClosure: YUndoPopObserver, @unchecked Sendabl
     let body: @Sendable (YUndoEvent) -> Void
     init(_ body: @escaping @Sendable (YUndoEvent) -> Void) { self.body = body }
     func onPop(event: YUndoEvent) { body(event) }
+}
+
+private final class DeepObserverClosure: YDeepObserver, @unchecked Sendable {
+    let body: @Sendable (YDeepEvent) -> Void
+    init(_ body: @escaping @Sendable (YDeepEvent) -> Void) { self.body = body }
+    func onChange(event: YDeepEvent) { body(event) }
+}
+
+private final class XmlObserverClosure: YXmlObserver, @unchecked Sendable {
+    let body: @Sendable (YXmlEvent) -> Void
+    init(_ body: @escaping @Sendable (YXmlEvent) -> Void) { self.body = body }
+    func onChange(event: YXmlEvent) { body(event) }
+}
+
+private final class AfterTransactionObserverClosure: YAfterTransactionObserver, @unchecked Sendable {
+    let body: @Sendable (YAfterTransactionEvent) -> Void
+    init(_ body: @escaping @Sendable (YAfterTransactionEvent) -> Void) { self.body = body }
+    func onAfterTransaction(event: YAfterTransactionEvent) { body(event) }
+}
+
+private final class SubdocsObserverClosure: YSubdocsObserver, @unchecked Sendable {
+    let body: @Sendable (YSubdocsEvent) -> Void
+    init(_ body: @escaping @Sendable (YSubdocsEvent) -> Void) { self.body = body }
+    func onSubdocs(event: YSubdocsEvent) { body(event) }
+}
+
+private final class DestroyObserverClosure: YDestroyObserver, @unchecked Sendable {
+    let body: @Sendable (YDestroyEvent) -> Void
+    init(_ body: @escaping @Sendable (YDestroyEvent) -> Void) { self.body = body }
+    func onDestroy(event: YDestroyEvent) { body(event) }
 }

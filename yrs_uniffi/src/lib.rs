@@ -27,6 +27,7 @@ mod xml_elem;
 mod xml_text;
 mod xml;
 mod output;
+mod events;
 #[cfg(test)]
 mod doc_tests;
 #[cfg(test)]
@@ -35,5 +36,7 @@ mod error_tests;
 mod attrs_tests;
 #[cfg(test)]
 mod nested_tests;
+#[cfg(test)]
+mod events_tests;
 
 uniffi::setup_scaffolding!();

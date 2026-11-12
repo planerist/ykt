@@ -337,4 +337,22 @@ impl YXmlText {
                 .collect())
         })
     }
+
+    /// Calls `observer` after every committed transaction that changed this XML text itself — its text, its XML attributes
+    /// — with the transaction's origin (Yjs's `observe`). The rules of `YText.observe` hold.
+    /// `NotIntegrated` for a preliminary one.
+    pub fn observe(&self, observer: Arc<dyn crate::events::YXmlObserver>) -> crate::observers::ObserveResult {
+        let c = integrated_of(&self.0)?;
+        let shared: XmlTextRef = c.read(None, |shared, _| Ok(shared.clone()))?;
+        Ok(crate::events::observe_xml_text(shared, c.doc.clone(), observer))
+    }
+
+    /// Calls `observer` after every committed transaction that changed this XML text (the nodes in it included) or any shared
+    /// type in it, with an event per changed type (target, path from here, change) and the
+    /// transaction's origin (Yjs's `observeDeep`). The rules of `observe` hold.
+    pub fn observe_deep(&self, observer: Arc<dyn crate::events::YDeepObserver>) -> crate::observers::ObserveResult {
+        let c = integrated_of(&self.0)?;
+        let shared: XmlTextRef = c.read(None, |shared, _| Ok(shared.clone()))?;
+        Ok(crate::events::observe_deep(shared, c.doc.clone(), observer))
+    }
 }

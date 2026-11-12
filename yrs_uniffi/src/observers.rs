@@ -8,6 +8,8 @@
 //!   transaction's update, to store or send.
 //! - [YDoc::observe_transaction_cleanup](crate::doc::YDoc::observe_transaction_cleanup): the state
 //!   vectors before and after every committed transaction.
+//! - Deep and XML observers, and the document's after-transaction, subdocument and destroy events:
+//!   the `events` module.
 //!
 //! Callbacks run synchronously, on the thread that commits the transaction, while the document is
 //! still locked by it: a callback must not read or write the same document (that fails with
@@ -132,15 +134,15 @@ pub(crate) fn state_map(state: &StateVector) -> HashMap<u64, u32> {
     state.iter().map(|(client, clock)| (client.get(), *clock)).collect()
 }
 
-/// A yrs text delta in ykt's form. Inserted embeds that aren't plain values (a shared type
-/// embedded in the text) come as their string form.
+/// A yrs text delta in ykt's form. An inserted shared type (embedded in the text) comes in its
+/// JSON form, as in `toDelta`.
 pub(crate) fn text_delta(delta: &[Delta<Out>], txn: &TransactionMut) -> Vec<YDelta> {
     let attrs = |a: &Option<Box<yrs::types::Attrs>>| -> Option<YAttributes> { a.as_ref().map(|a| into_yattrs((**a).clone())) };
     delta
         .iter()
         .map(|d| match d {
             Delta::Inserted(Out::Any(any), a) => YDelta::YInsert(into_yvalue(any), attrs(a)),
-            Delta::Inserted(other, a) => YDelta::YInsert(crate::attrs::YValue::String(other.clone().to_string(txn)), attrs(a)),
+            Delta::Inserted(other, a) => YDelta::YInsert(crate::attrs::out_into_yvalue(other, txn), attrs(a)),
             Delta::Deleted(len) => YDelta::YDelete(*len),
             Delta::Retain(len, a) => YDelta::YRetain(*len, attrs(a)),
         })

@@ -123,6 +123,47 @@ fun YUndoManager.observeItemPopped(onPop: (YUndoEvent) -> Unit): YSubscription =
         override fun onPop(event: YUndoEvent) = onPop.invoke(event)
     })
 
+// Deep and XML observers, document events.
+
+private class DeepObserverLambda(val body: (YDeepEvent) -> Unit) : YDeepObserver {
+    override fun onChange(event: YDeepEvent) = body(event)
+}
+
+private class XmlObserverLambda(val body: (YXmlEvent) -> Unit) : YXmlObserver {
+    override fun onChange(event: YXmlEvent) = body(event)
+}
+
+/** Yjs's `observeDeep`: an event per changed type — this one and those in it — with its target, its path from here and its change. */
+fun YText.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+fun YMap.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+fun YArray.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+fun YXmlFragment.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+fun YXmlElement.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+fun YXmlText.observeDeep(onChange: (YDeepEvent) -> Unit): YSubscription = observeDeep(DeepObserverLambda(onChange))
+
+/** Yjs's `observe` on an XML node: its children's, text's and attributes' changes. */
+fun YXmlFragment.observe(onChange: (YXmlEvent) -> Unit): YSubscription = observe(XmlObserverLambda(onChange))
+fun YXmlElement.observe(onChange: (YXmlEvent) -> Unit): YSubscription = observe(XmlObserverLambda(onChange))
+fun YXmlText.observe(onChange: (YXmlEvent) -> Unit): YSubscription = observe(XmlObserverLambda(onChange))
+
+/** Yjs's `doc.on('afterTransaction')`: every committed transaction, before its cleanup. */
+fun YDoc.observeAfterTransaction(onEvent: (YAfterTransactionEvent) -> Unit): YSubscription =
+    observeAfterTransaction(object : YAfterTransactionObserver {
+        override fun onAfterTransaction(event: YAfterTransactionEvent) = onEvent(event)
+    })
+
+/** Yjs's `doc.on('subdocs')`: subdocuments added, removed, asked to load. */
+fun YDoc.observeSubdocs(onEvent: (YSubdocsEvent) -> Unit): YSubscription =
+    observeSubdocs(object : YSubdocsObserver {
+        override fun onSubdocs(event: YSubdocsEvent) = onEvent(event)
+    })
+
+/** Yjs's `doc.on('destroy')`. */
+fun YDoc.observeDestroy(onEvent: (YDestroyEvent) -> Unit): YSubscription =
+    observeDestroy(object : YDestroyObserver {
+        override fun onDestroy(event: YDestroyEvent) = onEvent(event)
+    })
+
 // Nested shared types: what a YOutput holds, or null for anything else.
 val YOutput.asValue: YValue? get() = (this as? YOutput.Value)?.value
 val YOutput.asText: YText? get() = (this as? YOutput.Text)?.text
@@ -137,3 +178,7 @@ val YTransactionCleanupEvent.originString: String? get() = origin?.decodeToStrin
 val YUndoEvent.originString: String? get() = origin?.decodeToString()
 val YMapEvent.originString: String? get() = origin?.decodeToString()
 val YArrayEvent.originString: String? get() = origin?.decodeToString()
+val YDeepEvent.originString: String? get() = origin?.decodeToString()
+val YXmlEvent.originString: String? get() = origin?.decodeToString()
+val YAfterTransactionEvent.originString: String? get() = origin?.decodeToString()
+val YSubdocsEvent.originString: String? get() = origin?.decodeToString()

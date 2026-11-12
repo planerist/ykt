@@ -1,4 +1,4 @@
-use crate::collection::{is_alive, is_prelim, with_cell, Integrated, SharedCell, SharedCollection};
+use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, Integrated, SharedCell, SharedCollection};
 use crate::tools::{check_range, Error, Result};
 use crate::transaction::YTransaction;
 use crate::xml::YXmlChild;
@@ -172,5 +172,23 @@ impl YXmlFragment {
             },
             |c| c.readonly(txn.clone(), |c, txn| Ok(c.get_string(txn))),
         )
+    }
+
+    /// Calls `observer` after every committed transaction that changed this fragment itself — its children
+    /// — with the transaction's origin (Yjs's `observe`). The rules of `YText.observe` hold.
+    /// `NotIntegrated` for a preliminary one.
+    pub fn observe(&self, observer: Arc<dyn crate::events::YXmlObserver>) -> crate::observers::ObserveResult {
+        let c = integrated_of(&self.0)?;
+        let shared: XmlFragmentRef = c.read(None, |shared, _| Ok(shared.clone()))?;
+        Ok(crate::events::observe_xml_node(shared, c.doc.clone(), observer))
+    }
+
+    /// Calls `observer` after every committed transaction that changed this fragment (the nodes in it included) or any shared
+    /// type in it, with an event per changed type (target, path from here, change) and the
+    /// transaction's origin (Yjs's `observeDeep`). The rules of `observe` hold.
+    pub fn observe_deep(&self, observer: Arc<dyn crate::events::YDeepObserver>) -> crate::observers::ObserveResult {
+        let c = integrated_of(&self.0)?;
+        let shared: XmlFragmentRef = c.read(None, |shared, _| Ok(shared.clone()))?;
+        Ok(crate::events::observe_deep(shared, c.doc.clone(), observer))
     }
 }

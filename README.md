@@ -129,7 +129,23 @@ Callbacks from Rust into Kotlin or Swift when a document or a text changes, as Y
 - `YDoc.observeUpdateV1` / `observeUpdateV2` — every committed transaction as one update, ready to
   store or send (`applyUpdate` on another replica);
 - `YDoc.observeTransactionCleanup` — the state vectors before and after every transaction, and what
-  it deleted.
+  it deleted; `observeAfterTransaction` — the same, after the types' observers and before the cleanup
+  (Yjs's `afterTransaction`);
+- `observeDeep` on `YText`, `YMap`, `YArray`, `YXmlFragment`, `YXmlElement`, `YXmlText` (Yjs's
+  `observeDeep`) — a `YDeepEvent(events, origin)` per transaction that changed the type or any type
+  in it: one `YEvent` per changed type, shallower ones first — `TextChange(target, path, delta)`,
+  `MapChange(target, path, keys)`, `ArrayChange(target, path, delta)`,
+  `XmlChange(target, path, children, attributes)`, `XmlTextChange(target, path, delta, attributes)`.
+  `target` is the changed type's handle, `path` the way to it from the observed type
+  (`YPathSegment.Key(key)` / `Index(index)`, empty for the type itself);
+- `observe` on the XML types — a `YXmlEvent(target, children, delta, attributes, origin)`: an element's
+  or a fragment's children (inserted nodes as handles) and attributes (old and new values), an XML
+  text's delta and attributes;
+- `YDoc.observeSubdocs` — `YSubdocsEvent(added, removed, loaded, origin)`, subdocuments (`setDoc`,
+  `load()`, `destroyDoc()`, deleting one); `observeDestroy` — `YDestroyEvent(guid)` when the document
+  is destroyed (`YDoc.destroyDoc()`, Yjs's `destroy`: in Kotlin `destroy()` frees a handle).
+  Registering a document observer is a transaction of its own, which after-transaction and cleanup
+  observers hear (an empty one).
 
 Each returns a `YSubscription`: `unsubscribe()` stops it, and so does releasing it (Kotlin `close()`
 / `use { }`, Swift ARC). It keeps the document's store alive, so it may outlive the document.
@@ -148,6 +164,9 @@ let sub = try text.observe { event in
     if event.originString != "editor" { applyToTheView(event.delta) }
 }
 let updates = try doc.observeUpdateV2 { event in send(event.update) }
+let deep = try note.observeDeep { event in
+    for change in event.events { if case .textChange(let text, let path, let delta) = change { render(path, text, delta) } }
+}
 ```
 
 Rules:
@@ -274,7 +293,8 @@ them. Every call takes an optional transaction, as `YText`'s.
 - `observe` — `YMapEvent(keys, origin)` with `YEntryChange` per key (`Inserted(value)`,
   `Updated(oldValue, newValue)`, `Removed(oldValue)`), `YArrayEvent(delta, origin)` with
   `YArrayDelta` steps (`Insert(values)`, `Delete(n)`, `Retain(n)`), once per committed transaction;
-  the same rules as the other observers. Values in events are `YOutput` (below).
+  the same rules as the other observers. Values in events are `YOutput` (below); `observeDeep`
+  hears the types nested in them too (see Observers).
 
 `getMap` / `getArray` throw while the document is locked instead of waiting for it. Numbers travel in
 lib0's encoding, as Yjs's: an integer outside JS's safe range that a double holds exactly (2^60)
@@ -367,22 +387,21 @@ Source is inspired by y-crdt’s ywasm project.
   - [x] YDocument
     - [x] observe_update_v1 / observe_update_v2 (update + origin)
     - [x] observe_transaction_cleanup (state vectors before/after, delete set, origin)
-    - [ ] observe_after_transaction, observe_subdocs, observe_destroy
+    - [x] observe_after_transaction, observe_subdocs, observe_destroy (+ `destroyDoc()`, `load()`)
   - [x] YTransaction (basic: origin, state vectors, diff, apply, commit)
   - [x] YText
     - [x] insert, format: attributes as JSON or typed (`insertWithAttributes`, `formatWithAttributes`)
     - [x] to_delta
     - [x] apply_delta
     - [x] observe / unobserve (`YSubscription`: delta + origin)
-    - [ ] observe_deep / unobserve_deep (changes of shared types embedded in the text)
+    - [x] observe_deep (the text and the shared types embedded in it)
     - [x] id (`YBranchId`)
     - [x] insert_embed (plain values)
     - [ ] quote
   - [x] XML: YXmlElement, YXmlFragment, YXmlText
-    - [ ] YXmlElement: tree_walker, observe/unobserve, observe_deep
-    - [ ] YXmlFragment: tree_walker, observe/unobserve, observe_deep
-    - [ ] YXmlEvent
-    - [ ] YXmlText: quote, apply_delta, observe/unobserve, observe_deep
+    - [x] YXmlElement, YXmlFragment, YXmlText: observe (`YXmlEvent`), observe_deep
+    - [ ] YXmlElement / YXmlFragment: tree_walker
+    - [ ] YXmlText: quote, apply_delta
   - [x] YMap (+ observe: key changes with old / new values), plain values and nested shared types
   - [x] YArray (+ observe: delta), plain values and nested shared types
   - [ ] YWeakLink

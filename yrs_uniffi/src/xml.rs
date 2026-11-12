@@ -14,7 +14,7 @@ use yrs::types::TypeRef;
 use yrs::{Doc, TransactionMut, XmlElementRef, XmlFragmentRef, XmlOut, XmlTextRef};
 
 #[derive(uniffi::Enum)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum YXmlChild {
     Element(Arc<YXmlElement>),
     Fragment(Arc<YXmlFragment>),

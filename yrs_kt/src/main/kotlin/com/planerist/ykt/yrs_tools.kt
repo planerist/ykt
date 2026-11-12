@@ -91,7 +91,28 @@ fun YDoc.observeTransactionCleanup(onCleanup: (YTransactionCleanupEvent) -> Unit
         override fun onCleanup(event: YTransactionCleanupEvent) = onCleanup(event)
     })
 
+/** A stack item was added — a tracked change recorded (UNDO), or an undo recorded for redo (REDO):
+ *  return the meta to keep with it (e.g. the selection before the change), or null. */
+fun YUndoManager.observeItemAdded(onItem: (YUndoEvent) -> Map<String, YValue>?): YSubscription =
+    observeItemAdded(object : YUndoItemObserver {
+        override fun onItem(event: YUndoEvent): Map<String, YValue>? = onItem.invoke(event)
+    })
+
+/** The last stack item was extended by a change within the capture timeout: return its new meta, or null to keep it. */
+fun YUndoManager.observeItemUpdated(onItem: (YUndoEvent) -> Map<String, YValue>?): YSubscription =
+    observeItemUpdated(object : YUndoItemObserver {
+        override fun onItem(event: YUndoEvent): Map<String, YValue>? = onItem.invoke(event)
+    })
+
+/** `undo()` (UNDO) or `redo()` (REDO) popped a stack item, with its meta. Runs before they return, the
+ *  document still locked: keep what it needs and apply it after. */
+fun YUndoManager.observeItemPopped(onPop: (YUndoEvent) -> Unit): YSubscription =
+    observeItemPopped(object : YUndoPopObserver {
+        override fun onPop(event: YUndoEvent) = onPop.invoke(event)
+    })
+
 /** The transaction's origin as text (`transaction(origin)` takes a string). */
 val YTextEvent.originString: String? get() = origin?.decodeToString()
 val YUpdateEvent.originString: String? get() = origin?.decodeToString()
 val YTransactionCleanupEvent.originString: String? get() = origin?.decodeToString()
+val YUndoEvent.originString: String? get() = origin?.decodeToString()

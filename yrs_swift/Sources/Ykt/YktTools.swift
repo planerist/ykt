@@ -41,6 +41,26 @@ public extension YDoc {
     }
 }
 
+public extension YUndoManager {
+    /// A stack item was added — a tracked change recorded (`.undo`), or an undo recorded for redo
+    /// (`.redo`): return the meta to keep with it (e.g. the selection before the change), or nil.
+    func observeItemAdded(_ onItem: @escaping @Sendable (YUndoEvent) -> [String: YValue]?) throws -> YSubscription {
+        try observeItemAdded(observer: UndoItemObserverClosure(onItem))
+    }
+
+    /// The last stack item was extended by a change within the capture timeout: return its new
+    /// meta, or nil to keep it.
+    func observeItemUpdated(_ onItem: @escaping @Sendable (YUndoEvent) -> [String: YValue]?) throws -> YSubscription {
+        try observeItemUpdated(observer: UndoItemObserverClosure(onItem))
+    }
+
+    /// `undo()` (`.undo`) or `redo()` (`.redo`) popped a stack item, with its meta. Runs before
+    /// they return, the document still locked: keep what it needs and apply it after.
+    func observeItemPopped(_ onPop: @escaping @Sendable (YUndoEvent) -> Void) throws -> YSubscription {
+        try observeItemPopped(observer: UndoPopObserverClosure(onPop))
+    }
+}
+
 public extension YTextEvent {
     /// The transaction's origin as text (`transaction(origin:)` takes a string).
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
@@ -51,6 +71,10 @@ public extension YUpdateEvent {
 }
 
 public extension YTransactionCleanupEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YUndoEvent {
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
 }
 
@@ -70,4 +94,16 @@ private final class CleanupObserverClosure: YTransactionCleanupObserver, @unchec
     let body: @Sendable (YTransactionCleanupEvent) -> Void
     init(_ body: @escaping @Sendable (YTransactionCleanupEvent) -> Void) { self.body = body }
     func onCleanup(event: YTransactionCleanupEvent) { body(event) }
+}
+
+private final class UndoItemObserverClosure: YUndoItemObserver, @unchecked Sendable {
+    let body: @Sendable (YUndoEvent) -> [String: YValue]?
+    init(_ body: @escaping @Sendable (YUndoEvent) -> [String: YValue]?) { self.body = body }
+    func onItem(event: YUndoEvent) -> [String: YValue]? { body(event) }
+}
+
+private final class UndoPopObserverClosure: YUndoPopObserver, @unchecked Sendable {
+    let body: @Sendable (YUndoEvent) -> Void
+    init(_ body: @escaping @Sendable (YUndoEvent) -> Void) { self.body = body }
+    func onPop(event: YUndoEvent) { body(event) }
 }

@@ -43,6 +43,14 @@ impl YText {
             inner: Arc::new(RefCell::new(init)),
         }
     }
+
+    /// The text's shared ref and its document, resolved in a read-only transaction.
+    pub(crate) fn integrated_ref(&self) -> Result<(TextRef, yrs::Doc)> {
+        match self.inner.borrow().deref() {
+            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
+            SharedCollection::Integrated(c) => c.read(None, |text, _| Ok((text.clone(), c.doc.clone()))),
+        }
+    }
 }
 
 #[uniffi::export]

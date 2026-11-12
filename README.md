@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, relative positions, basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, relative positions, undo / redo, basic XML types, and core document/transaction flow.
 
 ## Quick start
 
@@ -187,6 +187,45 @@ try applyUpdateV2(doc: doc, update: remote)
 let index = try caret.offset(doc: doc)?.index        // moved with the text around it
 ```
 
+## Undo / redo
+`YUndoManager(doc, scope, options)` — yrs's `UndoManager`, Yjs's `Y.UndoManager` — records the
+changes of the transactions it tracks, by origin, to the texts in its scope (`expandScope(text)` adds
+more), as stack items:
+
+- `undo()` / `redo()` revert the last item / bring it back, and return whether anything changed;
+  `canUndo()`, `canRedo()`, `clear()`;
+- `YUndoOptions(captureTimeoutMillis = 500, trackedOrigins = [])`: changes closer than the timeout
+  merge into one item (`stopCapturing()` ends the item at once); with tracked origins, only the
+  transactions of those origins are recorded — remote updates applied with another origin, or none,
+  are never undone, and an undo keeps them. Without, transactions without an origin are recorded.
+  `addTrackedOrigin` / `removeTrackedOrigin` change the set;
+- `observeItemAdded` / `observeItemUpdated` (an item extended within the timeout) /
+  `observeItemPopped` — `YUndoEvent(kind, origin, meta)`, `kind` `UNDO` / `REDO` for the stack. An
+  added or updated observer returns the meta map to keep with the item (or null), a popped one gets
+  it back: e.g. the selection to restore, as Yjs's `stackItem.meta`;
+- `origin()` — the origin of the manager's own undo / redo transactions, as text observers see it.
+
+```kotlin
+val undo = YUndoManager(doc, text, YUndoOptions(trackedOrigins = listOf("editor")))
+undo.observeItemAdded { mapOf("selection" to YValue.Number(caret.toDouble())) }
+undo.observeItemPopped { event -> restoreCaret = event.meta["selection"] }   // apply after undo() returns
+doc.transact("editor") { txn -> text.insert(0u, "typed", null, txn) }
+undo.undo()
+```
+
+```swift
+let undo = try YUndoManager(doc: doc, scope: text, options: YUndoOptions(trackedOrigins: ["editor"]))
+let added = try undo.observeItemAdded { _ in ["selection": .number(Double(caret))] }
+let popped = try undo.observeItemPopped { event in pending = event.meta["selection"] }
+_ = try undo.undo()
+```
+
+Rules: the manager's callbacks run with the document locked, and inside them neither the document
+nor the manager may be used (that throws `AnotherTx`). `undo()`, `redo()` and `clear()` throw inside
+a transaction or any callback instead of waiting for the lock. Release the manager on the thread
+that uses the document; one released while the document is locked can't detach from it and stays
+in memory with it (harmlessly).
+
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
 
@@ -225,7 +264,8 @@ Source is inspired by y-crdt’s ywasm project.
 - Collaboration
   - [x] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
     place through remote edits; encode/decode (in YText; YArray positions later)
-  - [ ] YUndoManager (scope, tracked origins, capture timeout, stack item events)
+  - [x] YUndoManager (scope, tracked origins, capture timeout, stack item events with meta; texts in
+    the scope, YMap / YArray later)
   - [x] Update utilities without a document: merge_updates, diff_update,
     encode_state_vector_from_update (v1 and v2)
   - [ ] Awareness

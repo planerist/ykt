@@ -13,6 +13,9 @@ mod updates;
 mod sticky;
 #[cfg(test)]
 mod sticky_tests;
+mod undo;
+#[cfg(test)]
+mod undo_tests;
 #[cfg(test)]
 mod update_tests;
 mod xml_frag;

@@ -9,12 +9,14 @@ use crate::events::{
 use crate::text::YText;
 use crate::tools::Error;
 use crate::tools::Result;
+use crate::updates::DocEncoderV2;
 use crate::transaction::YTransaction;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::block::ClientID;
 use yrs::types::{TypeRef, TYPE_REFS_DOC};
+use yrs::updates::encoder::Encoder;
 use yrs::{Doc, OffsetKind, Options, ReadTxn, Transact};
 use crate::xml_frag::YXmlFragment;
 use crate::array::YArray;
@@ -277,9 +279,13 @@ impl YDoc {
     pub fn observe_update_v2(&self, observer: Arc<dyn YUpdateObserver>) -> ObserveResult {
         let (key, active, running) = Self::new_subscription();
         self.0
-            .observe_update_v2(key.clone(), move |txn, event| {
+            .observe_update_v2(key.clone(), move |txn, _event| {
                 if running.load(Ordering::SeqCst) {
-                    observer.on_update(YUpdateEvent { update: event.update.clone(), origin: origin_bytes(txn) });
+                    // The update written again, by `DocEncoderV2`: yrs's doesn't read after updates
+                    // out of order.
+                    let mut encoder = DocEncoderV2::new();
+                    txn.encode_update(&mut encoder);
+                    observer.on_update(YUpdateEvent { update: encoder.to_vec(), origin: origin_bytes(txn) });
                 }
             })
             .map_err(|_| Error::Locked)?;

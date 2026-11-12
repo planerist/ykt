@@ -1,11 +1,11 @@
 use crate::doc::YDoc;
 use crate::tools::Error;
 use crate::tools::Result;
-use crate::updates::decoding;
+use crate::updates::{decoding, state_as_update_v2, DocEncoderV2};
 use std::ops::Deref;
 use std::sync::Arc;
 use yrs::updates::decoder::{Decode, DecoderV1};
-use yrs::updates::encoder::{Encode, Encoder, EncoderV1, EncoderV2};
+use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
 use yrs::{ReadTxn, StateVector, Transact, Update};
 
 #[derive(uniffi::Object)]
@@ -138,8 +138,8 @@ pub fn encode_state_as_update_v2(doc: &YDoc, vector: Option<Arc<YStateVector>>) 
     } else {
         &StateVector::default()
     };
-    let bytes = txn.encode_state_as_update_v2(sv);
-    Ok(bytes)
+    // yrs's own writer fails on a document with updates out of order (`DocEncoderV2`).
+    state_as_update_v2(&txn, sv)
 }
 
 
@@ -273,7 +273,7 @@ pub fn encode_state_from_snapshot_v1(doc: &YDoc, snapshot: &YSnapshot) -> Result
 /// As `encode_state_from_snapshot_v1`, in lib0 v2 encoding.
 #[uniffi::export]
 pub fn encode_state_from_snapshot_v2(doc: &YDoc, snapshot: &YSnapshot) -> Result<Vec<u8>> {
-    let mut encoder = EncoderV2::new();
+    let mut encoder = DocEncoderV2::new();
     let txn = doc.0.try_transact().map_err(|_| Error::Locked)?;
     txn.encode_state_from_snapshot(&snapshot.0, &mut encoder).map_err(snapshot_error)?;
     Ok(encoder.to_vec())

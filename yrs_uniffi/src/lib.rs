@@ -43,5 +43,7 @@ mod events_tests;
 mod awareness_tests;
 #[cfg(test)]
 mod xml_tests;
+#[cfg(test)]
+mod out_of_order_tests;
 
 uniffi::setup_scaffolding!();

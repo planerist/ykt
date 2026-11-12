@@ -1,13 +1,13 @@
 use crate::tools::Error;
 use crate::tools::Result;
-use crate::updates::decoding;
+use crate::updates::{decoding, DocEncoderV2};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use yrs::updates::decoder::Decode;
-use yrs::updates::encoder::Encode;
+use yrs::updates::encoder::{Encode, Encoder};
 use yrs::{ReadTxn, StateVector, TransactionMut, Update};
 
 pub struct YTransactionInner {
@@ -156,7 +156,11 @@ impl YTransaction {
     /// As `diff_v1`, the update in lib0 v2 encoding (the state vector is lib0 v1).
     pub fn diff_v2(&self, vector: Vec<u8>) -> Result<Vec<u8>> {
         let sv = decoding(|| StateVector::decode_v1(&vector))?;
-        self.read(|txn| Ok(txn.encode_diff_v2(&sv)))
+        self.read(|txn| {
+            let mut encoder = DocEncoderV2::new();
+            txn.encode_diff(&sv, &mut encoder);
+            Ok(encoder.to_vec())
+        })
     }
 
     /// Applies a replica's update (lib0 v1) in this transaction. Malformed bytes throw
@@ -178,7 +182,11 @@ impl YTransaction {
 
     /// The transaction's changes so far as an update (lib0 v2).
     pub fn encode_update_v2(&self) -> Result<Vec<u8>> {
-        self.read(|txn| Ok(txn.encode_update_v2()))
+        self.read(|txn| {
+            let mut encoder = DocEncoderV2::new();
+            txn.encode_update(&mut encoder);
+            Ok(encoder.to_vec())
+        })
     }
 
     /// Force garbage collection of the deleted elements, regardless of a parent doc was created

@@ -310,6 +310,8 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
   - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
   - [ ] Review & simplify Error types
+  - [ ] `getText` / `getXmlFragment` throwing while the document is locked (as `getMap` / `getArray`
+    do) instead of waiting for the lock — inside a transaction or a callback they block for good
 
 ## Contributing
 Issues and PRs are welcome! If you’re missing a platform or a specific API, please open an issue to discuss design and approach.

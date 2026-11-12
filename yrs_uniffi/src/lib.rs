@@ -16,6 +16,10 @@ mod sticky_tests;
 mod undo;
 #[cfg(test)]
 mod undo_tests;
+mod map;
+mod array;
+#[cfg(test)]
+mod map_array_tests;
 #[cfg(test)]
 mod update_tests;
 mod xml_frag;

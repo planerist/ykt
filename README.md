@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, relative positions, undo / redo, basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting, transactions, observers), YMap and YArray of plain values (+ observers), document update and transaction observers, update utilities without a document, relative positions, undo / redo, basic XML types, and core document/transaction flow.
 
 ## Quick start
 
@@ -226,6 +226,41 @@ a transaction or any callback instead of waiting for the lock. Release the manag
 that uses the document; one released while the document is locked can't detach from it and stays
 in memory with it (harmlessly).
 
+## YMap and YArray
+`YDoc.getMap(name)` / `YDoc.getArray(name)` — Yjs's `Y.Map` and `Y.Array` of plain values (`YValue`:
+null, bool, number, bigint, string, buffer, and arrays and maps of them). Every call takes an
+optional transaction, as `YText`'s.
+
+- `YMap`: `set(key, value)`, `get(key)` (null if absent), `delete(key)` (returns the old value),
+  `containsKey`, `keys()` and `values()` (in no particular order, the same for both), `len()`,
+  `clear()`, `toJson()` (the whole map);
+- `YArray`: `insert(index, values)`, `push(values)`, `delete(index, length)`, `get(index)`, `len()`,
+  `toJson()` (the whole list); indexes past the end throw `OutOfBounds`;
+- `observe` — `YMapEvent(keys, origin)` with `YEntryChange` per key (`Inserted(value)`,
+  `Updated(oldValue, newValue)`, `Removed(oldValue)`), `YArrayEvent(delta, origin)` with
+  `YArrayDelta` steps (`Insert(values)`, `Delete(n)`, `Retain(n)`), once per committed transaction;
+  the same rules as the other observers.
+
+Nested shared types (a `Y.Map` inside a `Y.Map`, a `Y.Text` in an array) aren't in ykt's API yet:
+values are plain, and a nested type another client (Yjs) wrote reads in its JSON form — a map's
+entries, an array's values, a text's string. `getMap` / `getArray` throw while the document is
+locked instead of waiting for it. Numbers travel in lib0's encoding, as Yjs's: an integer outside
+JS's safe range that a double holds exactly (2^60) reaches other replicas as a number, not a bigint.
+
+```kotlin
+val settings = doc.getMap("settings")
+settings.set("theme", YValue.String("dark"))
+settings.observe { event -> event.keys["theme"]?.let { applyTheme(it) } }.use { /* ... */ }
+val tags = doc.getArray("tags")
+tags.push(listOf(YValue.String("work"), YValue.String("home")))
+```
+
+```swift
+let settings = try doc.getMap(name: "settings")
+try settings.set(key: "theme", value: .string("dark"))
+let sub = try doc.getArray(name: "tags").observe { event in render(event.delta) }
+```
+
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
 
@@ -257,8 +292,8 @@ Source is inspired by y-crdt’s ywasm project.
     - [ ] YXmlFragment: tree_walker, observe/unobserve, observe_deep
     - [ ] YXmlEvent
     - [ ] YXmlText: quote, apply_delta, observe/unobserve, observe_deep
-  - [ ] YMap (+ observe)
-  - [ ] YArray (+ observe)
+  - [x] YMap (+ observe: key changes with old / new values) — plain values; nested shared types later
+  - [x] YArray (+ observe: delta) — plain values; nested shared types later
   - [ ] YWeakLink
 
 - Collaboration

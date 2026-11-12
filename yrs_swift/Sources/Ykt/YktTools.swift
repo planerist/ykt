@@ -24,6 +24,22 @@ public extension YText {
     }
 }
 
+public extension YMap {
+    /// Yjs's `ymap.observe`: the changed keys, with old and new values, after every committed
+    /// transaction that changed the map.
+    func observe(_ onChange: @escaping @Sendable (YMapEvent) -> Void) throws -> YSubscription {
+        try observe(observer: MapObserverClosure(onChange))
+    }
+}
+
+public extension YArray {
+    /// Yjs's `yarray.observe`: the array's change as a delta, after every committed transaction
+    /// that changed it.
+    func observe(_ onChange: @escaping @Sendable (YArrayEvent) -> Void) throws -> YSubscription {
+        try observe(observer: ArrayObserverClosure(onChange))
+    }
+}
+
 public extension YDoc {
     /// Yjs's `doc.on('update')`: every committed transaction's changes as one update (lib0 v1).
     func observeUpdateV1(_ onUpdate: @escaping @Sendable (YUpdateEvent) -> Void) throws -> YSubscription {
@@ -78,10 +94,30 @@ public extension YUndoEvent {
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
 }
 
+public extension YMapEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YArrayEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
 private final class TextObserverClosure: YTextObserver, @unchecked Sendable {
     let body: @Sendable (YTextEvent) -> Void
     init(_ body: @escaping @Sendable (YTextEvent) -> Void) { self.body = body }
     func onChange(event: YTextEvent) { body(event) }
+}
+
+private final class MapObserverClosure: YMapObserver, @unchecked Sendable {
+    let body: @Sendable (YMapEvent) -> Void
+    init(_ body: @escaping @Sendable (YMapEvent) -> Void) { self.body = body }
+    func onChange(event: YMapEvent) { body(event) }
+}
+
+private final class ArrayObserverClosure: YArrayObserver, @unchecked Sendable {
+    let body: @Sendable (YArrayEvent) -> Void
+    init(_ body: @escaping @Sendable (YArrayEvent) -> Void) { self.body = body }
+    func onChange(event: YArrayEvent) { body(event) }
 }
 
 private final class UpdateObserverClosure: YUpdateObserver, @unchecked Sendable {

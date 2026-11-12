@@ -86,6 +86,9 @@ impl<S: SharedRef + 'static> Integrated<S> {
             Some(txn) => {
                 let inner = txn.get_inner();
                 let txn = inner.borrow();
+                if txn.committed {
+                    return Err(Error::TxnCommitted);
+                }
                 let txn = txn.deref();
                 let txn = txn.deref();
                 let shared_ref= self.resolve(txn)?;
@@ -107,6 +110,9 @@ impl<S: SharedRef + 'static> Integrated<S> {
             Some(txn) => {
                 let inner = txn.get_inner();
                 let mut txn = inner.borrow_mut();
+                if txn.committed {
+                    return Err(Error::TxnCommitted);
+                }
                 let txn = txn.deref_mut();
                 let shared_ref = self.resolve(txn)?;
                 f(&shared_ref, txn)

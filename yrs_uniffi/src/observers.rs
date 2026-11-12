@@ -2,6 +2,8 @@
 //! shared type changes, as Yjs's `observe` / `on('update')`.
 //!
 //! - [YText::observe](crate::text::YText::observe): the text's change as a delta, per transaction.
+//! - [YMap::observe](crate::map::YMap::observe): the changed keys; [YArray::observe](crate::array::YArray::observe):
+//!   the array's change as a delta.
 //! - [YDoc::observe_update_v1](crate::doc::YDoc::observe_update_v1) / `_v2`: every committed
 //!   transaction's update, to store or send.
 //! - [YDoc::observe_transaction_cleanup](crate::doc::YDoc::observe_transaction_cleanup): the state

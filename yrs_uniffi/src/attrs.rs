@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 use yrs::types::Attrs;
-use yrs::{Any, Number};
+use yrs::types::ToJson;
+use yrs::{Any, Number, Out, ReadTxn};
 
 pub type YAttributes = HashMap<String, YValue>;
 
@@ -112,6 +113,16 @@ pub fn into_yvalue(v: &Any) -> YValue {
             let v = v.clone();
             YValue::AttrMap(into_yattrs2(v.deref()))
         }
+    }
+}
+
+/// A value read from a shared type: plain values as they are; a shared type nested in it (written by
+/// a client that has them, as Yjs) in its JSON form — a map's entries, an array's values, a text's
+/// string.
+pub fn out_into_yvalue<T: ReadTxn>(value: &Out, txn: &T) -> YValue {
+    match value {
+        Out::Any(any) => into_yvalue(any),
+        nested => into_yvalue(&nested.to_json(txn)),
     }
 }
 

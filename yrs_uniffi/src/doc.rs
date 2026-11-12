@@ -14,6 +14,10 @@ use yrs::block::ClientID;
 use yrs::types::TYPE_REFS_DOC;
 use yrs::{Doc, OffsetKind, Options, Transact};
 use crate::xml_frag::YXmlFragment;
+use crate::array::YArray;
+use crate::collection::Integrated;
+use crate::map::YMap;
+use yrs::{ArrayRef, MapRef, RootRef};
 
 /// A ywasm document type. Documents are most important units of collaborative resources management.
 /// All shared collections live within a scope of their corresponding documents. All updates are
@@ -173,6 +177,26 @@ impl YDoc {
     pub fn get_xml_fragment(&self, name: &str) -> YXmlFragment {
         let shared_ref = self.get_or_insert_xml_fragment(name);
         YXmlFragment::new_with_collection(SharedCollection::integrated(shared_ref, self.0.clone()))
+    }
+
+    /// Returns the `YMap` root type of this `name`, creating it if the document hasn't got it (Yjs's
+    /// `doc.getMap`). Throws while the document is locked (an open transaction, a callback) instead
+    /// of waiting for it.
+    pub fn get_map(&self, name: &str) -> Result<YMap> {
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let map = MapRef::root(name).get_or_create(&mut txn);
+        drop(txn);
+        Ok(YMap(Integrated::new(map, self.0.clone())))
+    }
+
+    /// Returns the `YArray` root type of this `name`, creating it if the document hasn't got it
+    /// (Yjs's `doc.getArray`). Throws while the document is locked (an open transaction, a
+    /// callback) instead of waiting for it.
+    pub fn get_array(&self, name: &str) -> Result<YArray> {
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let array = ArrayRef::root(name).get_or_create(&mut txn);
+        drop(txn);
+        Ok(YArray(Integrated::new(array, self.0.clone())))
     }
 
     /// Calls `observer` with every committed transaction's changes as one update, lib0 v1 encoding,

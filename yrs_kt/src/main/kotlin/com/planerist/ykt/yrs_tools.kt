@@ -73,6 +73,18 @@ fun YText.observe(onChange: (YTextEvent) -> Unit): YSubscription =
         override fun onChange(event: YTextEvent) = onChange(event)
     })
 
+/** Yjs's `ymap.observe`: the changed keys, with old and new values, after every committed transaction that changed the map. */
+fun YMap.observe(onChange: (YMapEvent) -> Unit): YSubscription =
+    observe(object : YMapObserver {
+        override fun onChange(event: YMapEvent) = onChange.invoke(event)
+    })
+
+/** Yjs's `yarray.observe`: the array's change as a delta, after every committed transaction that changed it. */
+fun YArray.observe(onChange: (YArrayEvent) -> Unit): YSubscription =
+    observe(object : YArrayObserver {
+        override fun onChange(event: YArrayEvent) = onChange.invoke(event)
+    })
+
 /** Yjs's `doc.on('update')`: every committed transaction's changes as one update (lib0 v1). */
 fun YDoc.observeUpdateV1(onUpdate: (YUpdateEvent) -> Unit): YSubscription =
     observeUpdateV1(object : YUpdateObserver {
@@ -116,3 +128,5 @@ val YTextEvent.originString: String? get() = origin?.decodeToString()
 val YUpdateEvent.originString: String? get() = origin?.decodeToString()
 val YTransactionCleanupEvent.originString: String? get() = origin?.decodeToString()
 val YUndoEvent.originString: String? get() = origin?.decodeToString()
+val YMapEvent.originString: String? get() = origin?.decodeToString()
+val YArrayEvent.originString: String? get() = origin?.decodeToString()

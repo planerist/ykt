@@ -115,6 +115,15 @@ val title = note.setText("title", "Untitled")    // also setMap, setArray, setDo
 note.getOutput("meta")?.asMap                    // a Value, or a handle: Text, Map, Array, Xml…, Doc
 ```
 
+### XML
+```kotlin
+val root = doc.getXmlFragment("prosemirror")
+val p = YXmlElement("p", children = listOf(createXmlText("hello")))   // a new node…
+root.push(YXmlChild.Element(p))                                       // …in the document from here on
+p.setAttribute("level", YValue.Number(1.0)); p.nextSibling(); p.parent(); root.firstChild()
+xmlText.applyDelta(delta); xmlText.toDelta()   // as YText's; nodes embedded in it come as handles
+```
+
 ### Positions
 ```kotlin
 val caret = text.stickyIndex(5u, YAssoc.AFTER)   // AFTER: an insert at the caret goes before it
@@ -169,7 +178,7 @@ One type: `YError` in Swift, `YException` in Kotlin. Match on the case, not on t
 ## Planned
 
 - [ ] Kotlin Multiplatform
-- [ ] `YText.quote`, `YXmlText.applyDelta`, XML tree walker, `YWeakLink`
+- [ ] `YText.quote`, XML tree walker, `YWeakLink`
 
 ## Releasing
 

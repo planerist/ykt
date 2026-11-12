@@ -1,4 +1,5 @@
 import com.planerist.ykt.*
+import org.junit.jupiter.api.assertThrows
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -304,5 +305,39 @@ class YXmlTest {
 ]
 """, dumpFragment(xml)
         )
+    }
+
+    @Test
+    fun applyDeltaToAnXmlText() {
+        val a = YDoc(YDocOptions(1u))
+        val text = createXmlText("hello world").v1
+        a.getXmlFragment("x").push(YXmlChild.Text(text))
+        text.applyDelta(
+            listOf(
+                YDelta.YRetain(5u, mapOf("bold" to YValue.Bool(true))),
+                YDelta.YInsert(YValue.String(","), null),
+                YDelta.YRetain(1u, null),
+                YDelta.YDelete(5u),
+                YDelta.YInsert(YValue.String("there"), mapOf("italic" to YValue.Bool(true))),
+            )
+        )
+        assertEquals("<bold>hello</bold>, <italic>there</italic>", text.toText())
+
+        val b = YDoc(YDocOptions(2u))
+        applyUpdateV2(b, encodeStateAsUpdateV2(a).toDirectByteBuffer())
+        val replica = (b.getXmlFragment("x").firstChild() as YXmlChild.Text).v1
+        assertEquals(text.toDelta(), replica.toDelta())
+
+        // A delete past the end throws before anything is applied; a preliminary text has nothing to apply it to.
+        assertThrows<YException.OutOfBounds> { text.applyDelta(listOf(YDelta.YInsert(YValue.String("!"), null), YDelta.YDelete(20u))) }
+        assertEquals("<bold>hello</bold>, <italic>there</italic>", text.toText())
+        assertThrows<YException.NotIntegrated> { YXmlText("x").applyDelta(listOf(YDelta.YDelete(1u))) }
+
+        // Inside its own callback, the document is locked.
+        val locked = mutableListOf<Boolean>()
+        text.observe { locked += runCatching { text.applyDelta(listOf(YDelta.YDelete(1u))) }.exceptionOrNull() is YException.Locked }
+            .use { text.applyDelta(listOf(YDelta.YRetain(5u, mapOf("bold" to YValue.Null)))) }
+        assertEquals(listOf(true), locked)
+        assertEquals("hello, <italic>there</italic>", text.toText())
     }
 }

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import Ykt
 
@@ -97,5 +98,39 @@ struct YXmlTests {
             return
         }
         #expect(try prev.toText() == first.toText())
+    }
+
+    @Test func applyDeltaToAnXmlText() throws {
+        let a = YDoc(options: YDocOptions(clientId: 1))
+        let text = YXmlText(text: "hello world")
+        try a.getXmlFragment(name: "x").push(xmlNode: .text(text))
+        try text.applyDelta(delta: [
+            .yRetain(5, ["bold": .bool(true)]),
+            .yInsert(.string(","), nil),
+            .yRetain(1, nil),
+            .yDelete(5),
+            .yInsert(.string("there"), ["italic": .bool(true)]),
+        ])
+        #expect(try text.toText() == "<bold>hello</bold>, <italic>there</italic>")
+
+        let b = YDoc(options: YDocOptions(clientId: 2))
+        try applyUpdateV2(doc: b, update: encodeStateAsUpdateV2(doc: a))
+        guard case .text(let replica) = try b.getXmlFragment(name: "x").firstChild() else { Issue.record("not a text"); return }
+        #expect(try replica.toText() == "<bold>hello</bold>, <italic>there</italic>")
+
+        // A delete past the end throws before anything is applied; a preliminary text has nothing to apply it to.
+        expectYError(YError.OutOfBounds) { try text.applyDelta(delta: [.yInsert(.string("!"), nil), .yDelete(20)]) }
+        #expect(try text.toText() == "<bold>hello</bold>, <italic>there</italic>")
+        expectYError(YError.NotIntegrated) { try YXmlText(text: "x").applyDelta(delta: [.yDelete(1)]) }
+
+        // Inside its own callback, the document is locked.
+        let results = Box<String>()
+        let sub = try text.observe { _ in
+            do { try text.applyDelta(delta: [.yDelete(1)]); results.append("worked") } catch { results.append(caseName(error as! YError)) }
+        }
+        try text.applyDelta(delta: [.yRetain(5, ["bold": .null])])
+        #expect(results.all == ["Locked"])
+        #expect(try text.toText() == "hello, <italic>there</italic>")
+        _ = sub
     }
 }

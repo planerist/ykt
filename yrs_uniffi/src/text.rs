@@ -429,7 +429,7 @@ impl YText {
 
 /// `OutOfBounds` if `delta` deletes past the end of a text of `len` (yrs would panic half-way). A
 /// retain past the end stops at it, as yrs's does.
-fn check_delta(delta: &[YDelta], len: u32, offsets: yrs::OffsetKind) -> Result<()> {
+pub(crate) fn check_delta(delta: &[YDelta], len: u32, offsets: yrs::OffsetKind) -> Result<()> {
     let (mut pos, mut len) = (0u32, len);
     for step in delta {
         match step {

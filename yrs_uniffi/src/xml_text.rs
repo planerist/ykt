@@ -1,5 +1,6 @@
 use crate::attrs::{from_yattrs, into_yattrs3, into_yvalue, out_into_yvalue, YValue};
 use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, Integrated, SharedCell, SharedCollection};
+use crate::delta::{y_into_delta, YDelta};
 use crate::snapshots::YSnapshot;
 use crate::tools::{check_range, utf16_len, utf16_offset, Error, Result};
 use crate::transaction::YTransaction;
@@ -214,6 +215,19 @@ impl YXmlText {
                 })
             },
         )
+    }
+
+    /// Applies a delta (Yjs's `applyDelta`), as `YText.applyDelta`: retains (formatting with their
+    /// attributes), inserts of strings and embeds with attributes, deletes. A retain past the end
+    /// stops there; a delete past the end throws `OutOfBounds`, before anything is applied.
+    /// `NotIntegrated` for a preliminary XML text.
+    #[uniffi::method(default(txn=None))]
+    pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<()> {
+        integrated_of(&self.0)?.mutably(txn, |c, txn| {
+            crate::text::check_delta(&delta, c.len(txn), txn.doc().offset_kind())?;
+            c.apply_delta(txn, delta.iter().map(y_into_delta));
+            Ok(())
+        })
     }
 
     /// The next sibling node, or `null` for the last child. `NotIntegrated` for a preliminary XML

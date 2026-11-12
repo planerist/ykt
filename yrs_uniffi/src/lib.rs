@@ -41,5 +41,7 @@ mod nested_tests;
 mod events_tests;
 #[cfg(test)]
 mod awareness_tests;
+#[cfg(test)]
+mod xml_tests;
 
 uniffi::setup_scaffolding!();

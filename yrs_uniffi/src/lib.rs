@@ -30,5 +30,7 @@ mod xml;
 mod doc_tests;
 #[cfg(test)]
 mod error_tests;
+#[cfg(test)]
+mod attrs_tests;
 
 uniffi::setup_scaffolding!();

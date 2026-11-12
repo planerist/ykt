@@ -92,6 +92,34 @@ Notes:
 - API names may evolve while the Kotlin surface stabilizes.
 - Transactions are recommended for consistent reads/snapshots and are required for XML APIs; YText supports direct ops without an explicit transaction.
 
+## Formatting and embeds
+Attributes can be given typed, as `YAttributes` (a map of `YValue`), instead of a JSON string:
+
+- `YText.insertWithAttributes(index, chunk, attributes, txn?)` — the inserted text gets exactly these
+  attributes (Yjs's `insert(index, text, attributes)`): one the text around it has and the map lacks,
+  or has as `null`, isn't taken over, so an empty map inserts plain text even inside bold. `insert`
+  without attributes takes the formatting around it;
+- `YText.formatWithAttributes(index, length, attributes, txn?)` — sets each attribute on the range; a
+  `null` value removes it (Yjs's `format`);
+- `YText.insertEmbed(index, embed, attributes?, txn?)` — any plain value as an embed (a mention, an
+  image, a date: usually a map): one unit of the text's length, one insert in deltas and events;
+- `YText.id()` — the text's identity in its document, the same on every replica: `YBranchId.Root(name)`,
+  or `Nested(client, clock)` for a text inside another type.
+
+The JSON calls (`insert(index, chunk, json)`, `format(index, length, json)`) stay as they were.
+
+```kotlin
+text.insertWithAttributes(0u, "Yaranga", mapOf("bold" to YValue.Bool(true), "link" to YValue.String(url)))
+text.formatWithAttributes(0u, 7u, mapOf("bold" to YValue.Null))           // not bold any more
+text.insertEmbed(7u, YValue.AttrMap(mapOf("mention" to YValue.String("note://42"))))
+```
+
+```swift
+try text.insertWithAttributes(index: 0, chunk: "Yaranga", attributes: ["bold": .bool(true)])
+try text.formatWithAttributes(index: 0, length: 7, attributes: ["bold": .null])
+try text.insertEmbed(index: 7, embed: .attrMap(["date": .string("2026-11-12")]))
+```
+
 ## Observers
 Callbacks from Rust into Kotlin or Swift when a document or a text changes, as Yjs's `observe` and
 `on('update')`:
@@ -313,13 +341,13 @@ Source is inspired by y-crdt’s ywasm project.
     - [ ] observe_after_transaction, observe_subdocs, observe_destroy
   - [x] YTransaction (basic: origin, state vectors, diff, apply, commit)
   - [x] YText
-    - [x] insert (Attrs interface will improve)
+    - [x] insert, format: attributes as JSON or typed (`insertWithAttributes`, `formatWithAttributes`)
     - [x] to_delta
     - [x] apply_delta
     - [x] observe / unobserve (`YSubscription`: delta + origin)
     - [ ] observe_deep / unobserve_deep (changes of shared types embedded in the text)
-    - [ ] id
-    - [ ] insert_embed
+    - [x] id (`YBranchId`)
+    - [x] insert_embed (plain values)
     - [ ] quote
   - [x] XML: YXmlElement, YXmlFragment, YXmlText
     - [ ] YXmlElement: tree_walker, observe/unobserve, observe_deep
@@ -340,7 +368,7 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] Awareness
 
 - Utilities & ergonomics
-  - [ ] Better Attrs interface (typed attributes instead of JSON strings for insert / format)
+  - [x] Typed attributes (`YAttributes`) besides JSON strings for insert / format
   - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
   - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
   - [x] `getText` / `getXmlFragment` throw while the document is locked (as `getMap` / `getArray`)

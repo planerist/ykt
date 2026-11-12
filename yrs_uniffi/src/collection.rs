@@ -80,6 +80,23 @@ pub(crate) fn is_alive<P, S: SharedRef + Clone + 'static>(cell: &SharedCell<P, S
     }
 }
 
+/// A shared type's identity in its document, the same on every replica (yrs's `BranchID`): a root
+/// type's name, or the id of the item that holds a nested one.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum YBranchId {
+    Root { name: String },
+    Nested { client: u64, clock: u32 },
+}
+
+impl From<&BranchID> for YBranchId {
+    fn from(id: &BranchID) -> Self {
+        match id {
+            BranchID::Root(name) => YBranchId::Root { name: name.to_string() },
+            BranchID::Nested(id) => YBranchId::Nested { client: id.client.get(), clock: id.clock },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Integrated<S> {
     pub hook: Hook<S>,

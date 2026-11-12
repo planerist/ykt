@@ -1,5 +1,5 @@
-use crate::attrs::{into_yattrs, out_into_yvalue, parse_attrs, YValue};
-use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, SharedCell, SharedCollection};
+use crate::attrs::{from_yattrs, into_yattrs, out_into_yvalue, parse_attrs, YAttributes, YValue};
+use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, SharedCell, SharedCollection, YBranchId};
 use crate::delta::{y_into_delta, YDelta};
 use crate::observers::{origin_bytes, subscription_key, text_delta, ObserveResult, YSubscription, YTextEvent, YTextObserver};
 use crate::snapshots::YSnapshot;
@@ -11,7 +11,8 @@ use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_TEXT;
-use yrs::{GetString, Observable, Snapshot, Text, TextRef};
+use yrs::types::Attrs;
+use yrs::{Any, GetString, Observable, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -40,6 +41,41 @@ impl YText {
         YText {
             inner: Arc::new(RefCell::new(init)),
         }
+    }
+
+    fn insert_attrs(&self, index: u32, chunk: &str, attributes: Option<Attrs>, txn: Option<Arc<YTransaction>>) -> Result<()> {
+        let formatted = attributes.as_ref().is_some_and(|a| !a.is_empty());
+        with_cell(
+            &self.inner,
+            |s| {
+                if formatted {
+                    return Err(Error::NotIntegrated);
+                }
+                let at = utf16_offset(s, index)?;
+                s.insert_str(at, chunk);
+                Ok(())
+            },
+            |c| {
+                c.mutably(txn, |c, txn| {
+                    if index > c.len(txn) {
+                        return Err(Error::OutOfBounds);
+                    }
+                    match attributes {
+                        Some(attrs) => c.insert_with_attributes(txn, index, chunk, attrs),
+                        None => c.insert(txn, index, chunk),
+                    }
+                    Ok(())
+                })
+            },
+        )
+    }
+
+    fn format_attrs(&self, index: u32, length: u32, attrs: Attrs, txn: Option<Arc<YTransaction>>) -> Result<()> {
+        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
+            check_range(index, length, c.len(txn))?;
+            c.format(txn, index, length, attrs);
+            Ok(())
+        })
     }
 
     /// The text's shared ref and its document, resolved in a read-only transaction.
@@ -92,8 +128,8 @@ impl YText {
     }
 
     /// Inserts `chunk` at `index` (0 ..= `length()`, else `OutOfBounds`), with formatting
-    /// `attributes` given as a JSON object (`InvalidAttributes` otherwise). A preliminary text
-    /// takes no attributes (`NotIntegrated`).
+    /// `attributes` given as a JSON object (`InvalidAttributes` otherwise; `insertWithAttributes`
+    /// takes them typed). A preliminary text takes no attributes (`NotIntegrated`).
     #[uniffi::method(default(attributes=None, txn=None))]
     pub fn insert(
         &self,
@@ -102,35 +138,57 @@ impl YText {
         attributes: Option<String>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
-        let attributes = parse_attrs(attributes)?;
-        let formatted = attributes.is_some();
-        with_cell(
-            &self.inner,
-            |s| {
-                if formatted {
-                    return Err(Error::NotIntegrated);
+        self.insert_attrs(index, chunk, parse_attrs(attributes)?, txn)
+    }
+
+    /// Inserts `chunk` at `index` (0 ..= `length()`, else `OutOfBounds`) with exactly these
+    /// formatting `attributes`, as Yjs's `insert(index, text, attributes)`: an attribute of the text
+    /// around it that the map lacks (or has as `null`) isn't taken over — an empty map inserts
+    /// plain text even inside bold — whereas `insert` without attributes takes the formatting
+    /// around it. A preliminary text takes an empty map only (`NotIntegrated`).
+    #[uniffi::method(default(txn=None))]
+    pub fn insert_with_attributes(
+        &self,
+        index: u32,
+        chunk: &str,
+        attributes: YAttributes,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<()> {
+        self.insert_attrs(index, chunk, Some(from_yattrs(&attributes)), txn)
+    }
+
+    /// Inserts an embed — any plain value: a map (a mention, an image), a string, a number… — at
+    /// `index`, with formatting `attributes` (Yjs's `insertEmbed`). It takes one unit of the
+    /// text's length and comes back as one insert in deltas. `NotIntegrated` for a preliminary
+    /// text.
+    #[uniffi::method(default(attributes=None, txn=None))]
+    pub fn insert_embed(
+        &self,
+        index: u32,
+        embed: YValue,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<()> {
+        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
+            if index > c.len(txn) {
+                return Err(Error::OutOfBounds);
+            }
+            let embed: Any = embed.into();
+            match attributes {
+                Some(attrs) if !attrs.is_empty() => {
+                    c.insert_embed_with_attributes(txn, index, embed, from_yattrs(&attrs));
                 }
-                let at = utf16_offset(s, index)?;
-                s.insert_str(at, chunk);
-                Ok(())
-            },
-            |c| {
-                c.mutably(txn, |c, txn| {
-                    if index > c.len(txn) {
-                        return Err(Error::OutOfBounds);
-                    }
-                    match attributes {
-                        Some(attrs) => c.insert_with_attributes(txn, index, chunk, attrs),
-                        None => c.insert(txn, index, chunk),
-                    }
-                    Ok(())
-                })
-            },
-        )
+                _ => {
+                    c.insert_embed(txn, index, embed);
+                }
+            }
+            Ok(())
+        })
     }
 
     /// Formats `length` units from `index` on with `attributes`, a JSON object (a `null` value
-    /// removes that attribute). `OutOfBounds` past the end; `NotIntegrated` for a preliminary text.
+    /// removes that attribute; `formatWithAttributes` takes them typed). `OutOfBounds` past the
+    /// end; `NotIntegrated` for a preliminary text.
     #[uniffi::method(default(txn=None))]
     pub fn format(
         &self,
@@ -139,12 +197,27 @@ impl YText {
         attributes: String,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
-        let attrs = parse_attrs(Some(attributes))?.unwrap_or_default();
-        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
-            check_range(index, length, c.len(txn))?;
-            c.format(txn, index, length, attrs);
-            Ok(())
-        })
+        self.format_attrs(index, length, parse_attrs(Some(attributes))?.unwrap_or_default(), txn)
+    }
+
+    /// Formats `length` units from `index` on with `attributes`: each one set, or removed by a
+    /// `null` value (Yjs's `format`). `OutOfBounds` past the end; `NotIntegrated` for a
+    /// preliminary text.
+    #[uniffi::method(default(txn=None))]
+    pub fn format_with_attributes(
+        &self,
+        index: u32,
+        length: u32,
+        attributes: YAttributes,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<()> {
+        self.format_attrs(index, length, from_yattrs(&attributes), txn)
+    }
+
+    /// The text's identity in its document, the same on every replica: its root name, or for a
+    /// nested text the id of the item that holds it. `NotIntegrated` for a preliminary text.
+    pub fn id(&self) -> Result<YBranchId> {
+        Ok(integrated_of(&self.inner)?.id().into())
     }
 
     /// Appends `chunk` at the end, with formatting `attributes` as in `insert`.
@@ -156,7 +229,7 @@ impl YText {
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
-        let formatted = attributes.is_some();
+        let formatted = attributes.as_ref().is_some_and(|a| !a.is_empty());
         with_cell(
             &self.inner,
             |s| {

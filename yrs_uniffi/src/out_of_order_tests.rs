@@ -256,3 +256,30 @@ fn a_clients_update_waits_for_its_earlier_ones() {
     }
     assert_eq!(texts, ["ab", "ab"]);
 }
+
+#[test]
+fn an_update_isnt_left_out_for_the_order_it_came_in() {
+    // Seven updates of three clients (lib0 v1), from the randomized test, minimized: yrs 0.28.1
+    // left out " c0.4" (#4) when they came in the second order, though everything it builds on had
+    // arrived. #7 and #11 build on updates that never come: they wait in both orders.
+    let hex = [
+        (0, "01011400040101740a0a6c696e652063302e3000"),
+        (1, "010115008414090a0a6c696e652063312e3100"),
+        (2, "01011600040101740a0a6c696e652063322e3200"),
+        (4, "0101140ac415041505052063302e3400"),
+        (5, "0101160a8416090a0a6c696e652063322e3500"),
+        (7, "010116148414180a0a6c696e652063322e3700"),
+        (11, "0101150ac4161a161b062063312e313100"),
+    ];
+    let bytes = |i: usize| -> Vec<u8> {
+        let h = hex.iter().find(|(n, _)| *n == i).unwrap().1;
+        (0..h.len()).step_by(2).map(|k| u8::from_str_radix(&h[k..k + 2], 16).unwrap()).collect()
+    };
+    for order in [[0, 1, 2, 4, 5, 7, 11], [5, 4, 11, 2, 0, 7, 1]] {
+        let server = doc(9);
+        for i in order {
+            apply_update(&server, &bytes(i), None).unwrap();
+        }
+        assert_eq!(text_of(&server), "\nline c0.0\nline c0.4 c1.1\nline c2.2\nline c2.5", "{order:?}");
+    }
+}

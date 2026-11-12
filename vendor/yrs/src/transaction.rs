@@ -558,6 +558,11 @@ impl<'doc> TransactionMut<'doc> {
         }
     }
 
+    /// Check, if there were any changes registered within the scope of this transaction.
+    pub fn has_changes(&self) -> bool {
+        !(self.insert_set.is_empty() && self.delete_set.is_empty())
+    }
+
     pub fn doc(&self) -> &Doc {
         &self.doc
     }
@@ -604,6 +609,12 @@ impl<'doc> TransactionMut<'doc> {
     /// Data about deletions performed in the scope of current transaction.
     pub fn delete_set(&self) -> &IdSet {
         &self.delete_set
+    }
+
+    /// Describes the set of items that are cleaned up / deleted by ids. It is a subset
+    /// of [Self::delete_set].
+    pub fn cleanups(&self) -> &IdSet {
+        &self.cleanups
     }
 
     /// Returns origin of the transaction if any was defined. Read-write transactions can get an
@@ -868,11 +879,19 @@ impl<'doc> TransactionMut<'doc> {
         let known_state = store.blocks.known_state(&update.blocks);
         update.blocks.exclude(&known_state);
 
+        // we need to check early since update clients are consumed during `update.integrate`
+        let mut retry = match &store.pending {
+            Some(pending) => pending
+                .missing
+                .iter()
+                .any(|(client, _)| update.blocks.clients.contains_key(client)),
+            None => false,
+        };
+
         // 2. Integrate incoming update
         let (remaining, remaining_ds) = update.integrate(self)?;
 
         // 3. Check if we have pending updates to integrate
-        let mut retry = false;
         {
             let store = self.store_mut();
             store.pending = if let Some(mut pending) = store.pending.take() {
@@ -1355,7 +1374,7 @@ impl<'doc> TransactionMut<'doc> {
 
     pub(crate) fn add_changed_type(&mut self, parent: BranchPtr, parent_sub: Option<Arc<str>>) {
         let trigger = if let Some(ptr) = parent.item {
-            (ptr.id().clock < self.before_state().get(&ptr.id().client)) && !ptr.is_deleted()
+            !self.has_added(ptr.id()) && !ptr.is_deleted()
         } else {
             true
         };

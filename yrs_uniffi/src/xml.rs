@@ -111,6 +111,28 @@ impl YXmlChild {
         children.iter().try_for_each(|child| child.assert_xml_prelim())
     }
 
+    /// The nodes inside preliminary `children`, depth-first in document order, as yrs's tree walker
+    /// gives an integrated node's. A node that went into a document meanwhile isn't walked into.
+    pub(crate) fn prelim_descendants(children: &[YXmlChild]) -> crate::tools::Result<Vec<YXmlChild>> {
+        let mut nodes = Vec::new();
+        for child in children {
+            nodes.push(child.clone());
+            let inside = match child {
+                YXmlChild::Element(e) => match &*e.0.try_borrow().map_err(|_| Error::Locked)? {
+                    SharedCollection::Prelim(p) => p.children.clone(),
+                    SharedCollection::Integrated(_) => vec![],
+                },
+                YXmlChild::Fragment(f) => match &*f.0.try_borrow().map_err(|_| Error::Locked)? {
+                    SharedCollection::Prelim(children) => children.clone(),
+                    SharedCollection::Integrated(_) => vec![],
+                },
+                YXmlChild::Text(_) => vec![],
+            };
+            nodes.extend(Self::prelim_descendants(&inside)?);
+        }
+        Ok(nodes)
+    }
+
     fn type_ref(&self) -> TypeRef {
         match self {
             YXmlChild::Element(v) => {

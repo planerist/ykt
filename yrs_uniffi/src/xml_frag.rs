@@ -158,6 +158,18 @@ impl YXmlFragment {
         )
     }
 
+    /// Every node inside, depth-first in document order — children, their children… — as handles
+    /// (Yjs's `createTreeWalker` without a filter, yrs's `successors`). Nodes embedded in an XML
+    /// text aren't walked into, as in Yjs; deleted ones are left out.
+    #[uniffi::method(default(txn=None))]
+    pub fn tree_walker(&self, txn: Option<Arc<YTransaction>>) -> Result<Vec<YXmlChild>> {
+        with_cell(
+            &self.0,
+            |children| YXmlChild::prelim_descendants(children),
+            |c| c.read(txn, |fragment, view| Ok(fragment.successors(view).map(|node| YXmlChild::from_xml(node, c.doc.clone())).collect())),
+        )
+    }
+
     /// The fragment as XML text.
     #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {

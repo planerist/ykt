@@ -204,6 +204,18 @@ impl YXmlElement {
         integrated_of(&self.0)?.readonly(txn, |c, txn| Ok(c.parent().map(|node| YXmlChild::from_xml(node, txn.doc().clone()))))
     }
 
+    /// Every node inside, depth-first in document order — children, their children… — as handles
+    /// (Yjs's `createTreeWalker` without a filter, yrs's `successors`). Nodes embedded in an XML
+    /// text aren't walked into, as in Yjs; deleted ones are left out.
+    #[uniffi::method(default(txn=None))]
+    pub fn tree_walker(&self, txn: Option<Arc<YTransaction>>) -> Result<Vec<YXmlChild>> {
+        with_cell(
+            &self.0,
+            |element| YXmlChild::prelim_descendants(&element.children),
+            |c| c.read(txn, |element, view| Ok(element.successors(view).map(|node| YXmlChild::from_xml(node, c.doc.clone())).collect())),
+        )
+    }
+
     /// The element as XML text.
     #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {

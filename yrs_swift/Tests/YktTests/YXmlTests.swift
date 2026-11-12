@@ -133,4 +133,46 @@ struct YXmlTests {
         #expect(try text.toText() == "hello, <italic>there</italic>")
         _ = sub
     }
+
+    private func describe(_ nodes: [YXmlChild]) throws -> [String] {
+        try nodes.map { node in
+            switch node {
+            case .element(let e): return "<\(try e.name())>"
+            case .text(let t): return try t.toText()
+            case .fragment: return "#fragment"
+            }
+        }
+    }
+
+    @Test func treeWalker() throws {
+        let a = YDoc(options: YDocOptions(clientId: 1))
+        let root = try a.getXmlFragment(name: "x")
+        let b = try YXmlElement(name: "b", children: [.text(YXmlText(text: "world"))])
+        let p = try YXmlElement(name: "p", children: [.text(YXmlText(text: "Hello ")), .element(b)])
+        #expect(try describe(p.treeWalker()) == ["Hello ", "<b>", "world"], "a new node's tree")
+        try root.push(xmlNode: .element(p))
+        try root.push(xmlNode: .text(YXmlText(text: "again")))
+        try root.push(xmlNode: .element(YXmlElement(name: "hr")))
+
+        let everything = ["<p>", "Hello ", "<b>", "world", "again", "<hr>"]
+        #expect(try describe(root.treeWalker()) == everything)
+        #expect(try describe(p.treeWalker()) == ["Hello ", "<b>", "world"], "only what is inside")
+        guard case .element(let found) = try root.treeWalker()[2] else { Issue.record("not an element"); return }
+        #expect(found == b, "a handle of the node itself")
+
+        let replica = YDoc(options: YDocOptions(clientId: 2))
+        try applyUpdateV2(doc: replica, update: encodeStateAsUpdateV2(doc: a))
+        #expect(try describe(replica.getXmlFragment(name: "x").treeWalker()) == everything)
+
+        try root.delete(index: 0, length: 1)
+        #expect(try describe(root.treeWalker()) == ["again", "<hr>"], "deleted nodes are left out")
+        let results = Box<String>()
+        let sub = try root.observe { _ in
+            do { _ = try root.treeWalker(); results.append("worked") } catch { results.append(caseName(error as! YError)) }
+        }
+        try root.delete(index: 0, length: 2)
+        #expect(results.all == ["Locked"])
+        #expect(try root.treeWalker().isEmpty)
+        _ = sub
+    }
 }

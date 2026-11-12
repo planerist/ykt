@@ -1,5 +1,6 @@
 //! XML texts and trees, through ykt's API: `YXmlText.applyDelta` (formatting, inserts, embeds,
-//! deletes; replicating; what it throws).
+//! deletes; replicating; what it throws); the tree walker (`treeWalker`: every node inside, in
+//! order, integrated and preliminary, after deletes, on a replica).
 
 use crate::attrs::{YAttributes, YValue};
 use crate::delta::YDelta;
@@ -8,6 +9,8 @@ use crate::events::{YXmlEvent, YXmlObserver};
 use crate::snapshots::{apply_update_v2, encode_state_as_update_v2};
 use crate::tools::Error;
 use crate::xml::{YDeltaXmlChild, YXmlChild, YXmlDelta};
+use crate::xml_elem::YXmlElement;
+use crate::xml_frag::YXmlFragment;
 use crate::xml_text::YXmlText;
 use std::sync::{Arc, Mutex};
 
@@ -153,4 +156,95 @@ fn apply_delta_edges_and_errors() {
     text.insert(4, "e", None, None).unwrap();
     assert_eq!(*inside.1.lock().unwrap(), vec![true]);
     assert_eq!(text.to_string(None).unwrap(), "abcde");
+}
+
+fn element(name: &str, children: Vec<YXmlChild>) -> Arc<YXmlElement> {
+    Arc::new(YXmlElement::new(name.into(), None, Some(children)).unwrap())
+}
+
+fn text(t: &str) -> YXmlChild {
+    YXmlChild::Text(Arc::new(YXmlText::new(t.into(), None)))
+}
+
+/// A node as a word: an element's name in brackets, a text's text, `#fragment`.
+fn describe(nodes: Vec<YXmlChild>) -> Vec<String> {
+    describe_in(nodes, None)
+}
+
+fn describe_in(nodes: Vec<YXmlChild>, txn: Option<Arc<crate::transaction::YTransaction>>) -> Vec<String> {
+    nodes
+        .into_iter()
+        .map(|node| match node {
+            YXmlChild::Element(e) => format!("<{}>", e.name(txn.clone()).unwrap()),
+            YXmlChild::Text(t) => t.to_string(txn.clone()).unwrap(),
+            YXmlChild::Fragment(_) => "#fragment".into(),
+        })
+        .collect()
+}
+
+#[test]
+fn the_tree_walker_gives_every_node_inside_depth_first() {
+    let a = doc(1);
+    let root = a.get_xml_fragment("x").unwrap();
+    let b = element("b", vec![text("world")]);
+    let p = element("p", vec![text("Hello "), YXmlChild::Element(b.clone())]);
+    let list = Arc::new(YXmlFragment::new(vec![YXmlChild::Element(element("li", vec![text("one")])), YXmlChild::Element(element("li", vec![text("two")]))]).unwrap());
+    let again = Arc::new(YXmlText::new("again".into(), None));
+    root.push(YXmlChild::Element(p.clone()), None).unwrap();
+    root.push(YXmlChild::Text(again.clone()), None).unwrap();
+    root.push(YXmlChild::Element(element("hr", vec![])), None).unwrap();
+    root.push(YXmlChild::Fragment(list.clone()), None).unwrap();
+    // A node embedded in an XML text isn't walked into, as in Yjs.
+    again.insert_embed(5, YXmlChild::Element(element("em", vec![])), None, None).unwrap();
+
+    let everything = ["<p>", "Hello ", "<b>", "world", "again", "<hr>", "#fragment", "<li>", "one", "<li>", "two"];
+    assert_eq!(describe(root.tree_walker(None).unwrap()), everything);
+    assert_eq!(describe(p.tree_walker(None).unwrap()), ["Hello ", "<b>", "world"], "only what is inside");
+    assert_eq!(describe(list.tree_walker(None).unwrap()), ["<li>", "one", "<li>", "two"]);
+    match &root.tree_walker(None).unwrap()[2] {
+        YXmlChild::Element(found) => assert_eq!(**found, *b, "a handle of the node itself"),
+        other => panic!("not an element: {other:?}"),
+    }
+
+    // On a replica, the same tree.
+    let replica = doc(2);
+    sync(&a, &replica);
+    assert_eq!(describe(replica.get_xml_fragment("x").unwrap().tree_walker(None).unwrap()), everything);
+
+    // Deleted nodes are left out, the first one too.
+    p.delete(1, Some(1), None).unwrap();
+    assert_eq!(describe(root.tree_walker(None).unwrap()), ["<p>", "Hello ", "again", "<hr>", "#fragment", "<li>", "one", "<li>", "two"]);
+    root.delete(0, Some(1), None).unwrap();
+    root.delete(2, Some(1), None).unwrap();
+    assert_eq!(describe(root.tree_walker(None).unwrap()), ["again", "<hr>"]);
+    root.delete(0, Some(2), None).unwrap();
+    assert!(root.tree_walker(None).unwrap().is_empty());
+}
+
+#[test]
+fn the_tree_walker_of_preliminary_nodes_and_inside_callbacks() {
+    // A preliminary tree is walked as it is.
+    let p = element("p", vec![text("a"), YXmlChild::Element(element("b", vec![text("c")]))]);
+    let fragment = YXmlFragment::new(vec![YXmlChild::Element(p.clone()), text("d")]).unwrap();
+    assert_eq!(describe(fragment.tree_walker(None).unwrap()), ["<p>", "a", "<b>", "c", "d"]);
+    assert_eq!(describe(p.tree_walker(None).unwrap()), ["a", "<b>", "c"]);
+    assert!(element("hr", vec![]).tree_walker(None).unwrap().is_empty());
+
+    // In a transaction, with it; inside a callback, Locked.
+    struct Inside(Arc<YXmlFragment>, Mutex<Vec<bool>>);
+    impl YXmlObserver for Inside {
+        fn on_change(&self, _event: YXmlEvent) {
+            self.1.lock().unwrap().push(matches!(self.0.tree_walker(None), Err(Error::Locked)));
+        }
+    }
+    let doc = doc(1);
+    let root = Arc::new(doc.get_xml_fragment("x").unwrap());
+    let inside = Arc::new(Inside(root.clone(), Mutex::new(vec![])));
+    let _sub = root.observe(inside.clone()).unwrap();
+    let txn = Arc::new(doc.transaction(None).unwrap());
+    root.push(YXmlChild::Fragment(Arc::new(fragment)), Some(txn.clone())).unwrap();
+    assert_eq!(describe_in(root.tree_walker(Some(txn.clone())).unwrap(), Some(txn.clone())), ["#fragment", "<p>", "a", "<b>", "c", "d"]);
+    assert!(matches!(root.tree_walker(None), Err(Error::Locked)));
+    txn.commit().unwrap();
+    assert_eq!(*inside.1.lock().unwrap(), vec![true]);
 }

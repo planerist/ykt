@@ -340,4 +340,41 @@ class YXmlTest {
         assertEquals(listOf(true), locked)
         assertEquals("hello, <italic>there</italic>", text.toText())
     }
+
+    private fun describe(nodes: List<YXmlChild>): List<String> = nodes.map {
+        when (it) {
+            is YXmlChild.Element -> "<${it.v1.name()}>"
+            is YXmlChild.Text -> it.v1.toText()
+            is YXmlChild.Fragment -> "#fragment"
+        }
+    }
+
+    @Test
+    fun treeWalker() {
+        val a = YDoc(YDocOptions(1u))
+        val root = a.getXmlFragment("x")
+        val b = YXmlElement("b", children = listOf(createXmlText("world")))
+        val p = YXmlElement("p", children = listOf(createXmlText("Hello "), YXmlChild.Element(b)))
+        assertEquals(listOf("Hello ", "<b>", "world"), describe(p.treeWalker()), "a new node's tree")
+        root.push(YXmlChild.Element(p))
+        root.push(createXmlText("again"))
+        root.push(createXmlElement("hr"))
+
+        val everything = listOf("<p>", "Hello ", "<b>", "world", "again", "<hr>")
+        assertEquals(everything, describe(root.treeWalker()))
+        assertEquals(listOf("Hello ", "<b>", "world"), describe(p.treeWalker()), "only what is inside")
+        assertEquals(b, (root.treeWalker()[2] as YXmlChild.Element).v1, "a handle of the node itself")
+
+        val replica = YDoc(YDocOptions(2u))
+        applyUpdateV2(replica, encodeStateAsUpdateV2(a).toDirectByteBuffer())
+        assertEquals(everything, describe(replica.getXmlFragment("x").treeWalker()))
+
+        root.delete(0u, 1u)
+        assertEquals(listOf("again", "<hr>"), describe(root.treeWalker()), "deleted nodes are left out")
+        val locked = mutableListOf<Boolean>()
+        root.observe { locked += runCatching { root.treeWalker() }.exceptionOrNull() is YException.Locked }
+            .use { root.delete(0u, 2u) }
+        assertEquals(listOf(true), locked)
+        assertEquals(emptyList(), root.treeWalker())
+    }
 }

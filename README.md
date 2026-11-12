@@ -121,8 +121,10 @@ val root = doc.getXmlFragment("prosemirror")
 val p = YXmlElement("p", children = listOf(createXmlText("hello")))   // a new node…
 root.push(YXmlChild.Element(p))                                       // …in the document from here on
 p.setAttribute("level", YValue.Number(1.0)); p.nextSibling(); p.parent(); root.firstChild()
+root.treeWalker()                              // every node inside, depth-first, as handles
 xmlText.applyDelta(delta); xmlText.toDelta()   // as YText's; nodes embedded in it come as handles
 ```
+`treeWalker` is Yjs's [`createTreeWalker`](https://docs.yjs.dev/api/shared-types/y.xmlfragment) without a filter: filter the list.
 
 ### Positions
 ```kotlin
@@ -178,7 +180,7 @@ One type: `YError` in Swift, `YException` in Kotlin. Match on the case, not on t
 ## Planned
 
 - [ ] Kotlin Multiplatform
-- [ ] `YText.quote`, XML tree walker, `YWeakLink`
+- [ ] `YText.quote`, `YWeakLink`
 
 ## Releasing
 

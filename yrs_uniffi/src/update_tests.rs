@@ -96,7 +96,7 @@ fn edited(v: V, client: u64) -> (YDoc, Vec<Vec<u8>>) {
         V::Two => doc.observe_update_v2(updates.clone()),
     }
     .unwrap();
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "hello", None, None).unwrap();
     text.insert(5, " world", None, None).unwrap();
     text.format(0, 5, r#"{"bold":true}"#.into(), None).unwrap();
@@ -108,7 +108,7 @@ fn edited(v: V, client: u64) -> (YDoc, Vec<Vec<u8>>) {
 }
 
 fn text_of(doc: &YDoc) -> String {
-    doc.get_text("t").to_string(None).unwrap()
+    doc.get_text("t").unwrap().to_string(None).unwrap()
 }
 
 // Merging --------------------------------------------------------------------------------------------
@@ -128,8 +128,8 @@ fn merging_updates_is_applying_them_one_by_one() {
         assert_eq!(text_of(&merged), "ello world!", "{v:?}");
         assert_eq!(text_of(&merged), text_of(&one_by_one));
         assert_eq!(
-            merged.get_text("t").to_delta(None, None, None).unwrap(),
-            source.get_text("t").to_delta(None, None, None).unwrap(),
+            merged.get_text("t").unwrap().to_delta(None, None, None).unwrap(),
+            source.get_text("t").unwrap().to_delta(None, None, None).unwrap(),
             "the formatting too"
         );
         assert_eq!(sv(&encode_state_vector(&merged).unwrap()), sv(&encode_state_vector(&source).unwrap()));
@@ -154,7 +154,7 @@ fn merging_concurrent_edits_of_two_replicas() {
     for v in BOTH {
         let (a, a_updates) = edited(v, 1);
         let b = doc(2);
-        b.get_text("t").insert(0, "B", None, None).unwrap();
+        b.get_text("t").unwrap().insert(0, "B", None, None).unwrap();
         let mut all = a_updates.clone();
         all.push(full_state(v, &b));
 
@@ -221,8 +221,8 @@ fn a_diff_against_a_replicas_state_vector_is_what_it_lacks() {
         apply(v, &replica, &missing);
         assert_eq!(text_of(&replica), "ello world!");
         assert_eq!(
-            replica.get_text("t").to_delta(None, None, None).unwrap(),
-            source.get_text("t").to_delta(None, None, None).unwrap()
+            replica.get_text("t").unwrap().to_delta(None, None, None).unwrap(),
+            source.get_text("t").unwrap().to_delta(None, None, None).unwrap()
         );
         // Now nothing is missing: the next diff has no insertions.
         let nothing = diff(v, &full, &encode_state_vector(&replica).unwrap()).unwrap();
@@ -234,7 +234,7 @@ fn a_diff_against_a_replicas_state_vector_is_what_it_lacks() {
 fn a_diff_keeps_the_deletions() {
     for v in BOTH {
         let a = doc(1);
-        let text = a.get_text("t");
+        let text = a.get_text("t").unwrap();
         text.insert(0, "abc", None, None).unwrap();
         let replica = doc(2);
         apply(v, &replica, &full_state(v, &a));
@@ -284,7 +284,7 @@ fn the_state_vector_of_an_update_is_the_documents() {
     for v in BOTH {
         let (a, _) = edited(v, 1);
         let b = doc(2);
-        b.get_text("t").insert(0, "B", None, None).unwrap();
+        b.get_text("t").unwrap().insert(0, "B", None, None).unwrap();
         apply(v, &a, &full_state(v, &b));
 
         let from_update = sv_from_update(v, &full_state(v, &a)).unwrap();

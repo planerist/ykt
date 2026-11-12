@@ -5,7 +5,7 @@ struct YDocTests {
     @Test func snapshotState() throws {
         let d1 = YDoc(options: YDocOptions(clientId: 1, gc: false))
 
-        let text = d1.getText(name: "text")
+        let text = try d1.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
 
         let prev = snapshot(doc: d1)
@@ -14,7 +14,7 @@ struct YDocTests {
         let state = try encodeStateFromSnapshotV2(doc: d1, snapshot: prev)
 
         let d2 = YDoc(options: YDocOptions(clientId: 2))
-        let txt2 = d2.getText(name: "text")
+        let txt2 = try d2.getText(name: "text")
         try applyUpdateV2(doc: d2, update: state)
 
         #expect(try txt2.toText() == "hello")
@@ -23,7 +23,7 @@ struct YDocTests {
     @Test func stateAsUpdateDefault() throws {
         let d1 = YDoc(options: YDocOptions(clientId: 1, gc: false))
 
-        let text = d1.getText(name: "text")
+        let text = try d1.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
 
         let state = try encodeStateAsUpdateV2(doc: d1)
@@ -31,13 +31,13 @@ struct YDocTests {
         let d2 = YDoc(options: YDocOptions(clientId: 2))
         try applyUpdateV2(doc: d2, update: state)
 
-        let txt2 = d2.getText(name: "text")
+        let txt2 = try d2.getText(name: "text")
         #expect(try txt2.toText() == "hello")
     }
 
     @Test func delta() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
         let prev = snapshot(doc: doc)
         try text.insert(index: 5, chunk: " world")
@@ -52,7 +52,7 @@ struct YDocTests {
 
     @Test func deltaWithAttrs() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
         let prev = snapshot(doc: doc)
         try text.insert(index: 5, chunk: " world", attributes: "{\"bold\":true}")
@@ -67,7 +67,7 @@ struct YDocTests {
 
     @Test func deltaApplyDelta() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
         try text.insert(index: 5, chunk: " world", attributes: "{\"bold\":true}")
 
@@ -85,7 +85,7 @@ struct YDocTests {
 
     @Test func deltaApplyDelta2() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
         try text.insert(index: 5, chunk: " world", attributes: "{\"bold\":true}")
 
@@ -103,7 +103,7 @@ struct YDocTests {
 
     @Test func deltaApplyDelta3() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.applyDelta(delta: [
             .yInsert(.string("hello"), nil),
             .yInsert(.string("\n"), nil),
@@ -124,19 +124,19 @@ struct YDocTests {
 
     @Test func offsetKind() throws {
         let doc = YDoc(options: YDocOptions(clientId: 1, gc: false))
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.applyDelta(delta: [.yInsert(.string(" – "), nil)])
         #expect(try text.length() == 3)
 
         let doc2 = YDoc(options: YDocOptions(clientId: 1, gc: false, bytesOffset: true))
-        let text2 = doc2.getText(name: "text")
+        let text2 = try doc2.getText(name: "text")
         try text2.applyDelta(delta: [.yInsert(.string(" – "), nil)])
         #expect(try text2.length() == 5)
     }
 
     @Test func toText() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
         try text.insert(index: 5, chunk: " world", attributes: "{\"bold\":true}")
 
@@ -145,7 +145,7 @@ struct YDocTests {
 
     @Test func invalidOp() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "text")
+        let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
 
         #expect(throws: (any Error).self) { try text.delete(index: 4, length: 3) }

@@ -15,7 +15,7 @@ struct UpdateTests {
         } else {
             sub = try doc.observeUpdateV1 { updates.append($0.update) }
         }
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         try text.insert(index: 0, chunk: "hello")
         try text.insert(index: 5, chunk: " world")
         try text.format(index: 0, length: 5, attributes: #"{"bold":true}"#)

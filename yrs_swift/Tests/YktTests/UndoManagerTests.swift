@@ -22,7 +22,7 @@ struct UndoManagerTests {
 
     @Test func undoTakesBackTheEditorsChangesAndKeepsTheRemoteOnes() throws {
         let local = YDoc(options: YDocOptions(clientId: 1))
-        let text = local.getText(name: "t")
+        let text = try local.getText(name: "t")
         let undo = try manager(local, text)
         let remote = YDoc(options: YDocOptions(clientId: 2))
 
@@ -49,7 +49,7 @@ struct UndoManagerTests {
 
     @Test func captureTimeoutMergesAndStopCapturingSplits() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text, timeout: 3_600_000)
         try insert(doc, text, "editor", 0, "a")
         try insert(doc, text, "editor", 1, "b")
@@ -65,7 +65,7 @@ struct UndoManagerTests {
 
     @Test func clearAndUntrackedOrigins() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text)
         try insert(doc, text, "other", 0, "a")
         try text.insert(index: 1, chunk: "b") // no origin
@@ -84,7 +84,7 @@ struct UndoManagerTests {
 
     @Test func defaultOptionsTrackChangesWithoutAnOrigin() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try YUndoManager(doc: doc, scope: text)
         try text.insert(index: 0, chunk: "a")
         try insert(doc, text, "editor", 1, "b")
@@ -95,7 +95,7 @@ struct UndoManagerTests {
 
     @Test func metaComesBackWhenTheItemIsPopped() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text)
         final class Selection: @unchecked Sendable { var at: Double = 0 }
         let selection = Selection()
@@ -126,7 +126,7 @@ struct UndoManagerTests {
 
     @Test func anExtendedItemCanChangeItsMeta() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text, timeout: 3_600_000)
         let popped = Box<[String: YValue]>()
         let subs = [
@@ -144,7 +144,7 @@ struct UndoManagerTests {
 
     @Test func undoTransactionsCarryTheManagersOrigin() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text)
         let origins = Box<Data?>()
         let sub = try text.observe { origins.append($0.origin) }
@@ -158,7 +158,7 @@ struct UndoManagerTests {
 
     @Test func insideATransactionOrACallbackItThrows() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text)
         try insert(doc, text, "editor", 0, "a")
 
@@ -190,7 +190,7 @@ struct UndoManagerTests {
 
     @Test func releasingTheManagerIsSafeAnywhere() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         var undo: YUndoManager? = try manager(doc, text)
         let sub = try undo!.observeItemAdded { _ in nil }
         try insert(doc, text, "editor", 0, "a")
@@ -209,7 +209,7 @@ struct UndoManagerTests {
     /// manager.
     @Test func sharedBehindALock() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let undo = try manager(doc, text)
         let lock = NSLock()
         let workers = 8

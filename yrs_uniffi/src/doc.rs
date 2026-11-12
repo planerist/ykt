@@ -17,7 +17,7 @@ use crate::xml_frag::YXmlFragment;
 use crate::array::YArray;
 use crate::collection::Integrated;
 use crate::map::YMap;
-use yrs::{ArrayRef, MapRef, RootRef};
+use yrs::{ArrayRef, MapRef, RootRef, TextRef, XmlFragmentRef};
 
 /// A ywasm document type. Documents are most important units of collaborative resources management.
 /// All shared collections live within a scope of their corresponding documents. All updates are
@@ -155,28 +155,27 @@ impl YDoc {
         Ok(YTransaction::from(inner))
     }
 
-    /// Returns a `YText` shared data type, that's accessible for subsequent accesses using given
-    /// `name`.
+    /// Returns the `YText` root type of this `name`, creating it if the document hasn't got it (Yjs's
+    /// `doc.getText`). The same name gives the same text, whichever handle is used. Throws while the
+    /// document is locked (an open transaction, a callback) instead of waiting for it: yrs's
+    /// `get_or_insert_text` would wait for good.
     ///
-    /// If there was no instance with this name before, it will be created and then returned.
-    ///
-    /// If there was an instance with this name, but it was of different type, it will be projected
-    /// onto `YText` instance.
-    pub fn get_text(&self, name: &str) -> YText {
-        let shared_ref = self.get_or_insert_text(name);
-        YText::new(SharedCollection::integrated(shared_ref, self.0.clone()))
+    /// A root of this name that is of another type is read as a text.
+    pub fn get_text(&self, name: &str) -> Result<YText> {
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let text = TextRef::root(name).get_or_create(&mut txn);
+        drop(txn);
+        Ok(YText::new(SharedCollection::integrated(text, self.0.clone())))
     }
 
-    /// Returns a `YXmlFragment` shared data type, that's accessible for subsequent accesses using
-    /// given `name`.
-    ///
-    /// If there was no instance with this name before, it will be created and then returned.
-    ///
-    /// If there was an instance with this name, but it was of different type, it will be projected
-    /// onto `YXmlFragment` instance.
-    pub fn get_xml_fragment(&self, name: &str) -> YXmlFragment {
-        let shared_ref = self.get_or_insert_xml_fragment(name);
-        YXmlFragment::new_with_collection(SharedCollection::integrated(shared_ref, self.0.clone()))
+    /// Returns the `YXmlFragment` root type of this `name`, creating it if the document hasn't got it
+    /// (Yjs's `doc.getXmlFragment`). Throws while the document is locked (an open transaction, a
+    /// callback) instead of waiting for it.
+    pub fn get_xml_fragment(&self, name: &str) -> Result<YXmlFragment> {
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let fragment = XmlFragmentRef::root(name).get_or_create(&mut txn);
+        drop(txn);
+        Ok(YXmlFragment::new_with_collection(SharedCollection::integrated(fragment, self.0.clone())))
     }
 
     /// Returns the `YMap` root type of this `name`, creating it if the document hasn't got it (Yjs's

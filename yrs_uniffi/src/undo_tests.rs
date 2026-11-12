@@ -90,14 +90,14 @@ impl<F: Fn(YTextEvent) + Send + Sync> YTextObserver for TextFn<F> {
 #[test]
 fn undo_takes_back_the_editors_changes_and_keeps_the_remote_ones() {
     let local = doc(1);
-    let text = local.get_text("t");
+    let text = local.get_text("t").unwrap();
     let undo = manager(&local, &text, 0, &["editor"]);
     let remote = doc(2);
 
     insert(&local, &text, "editor", 0, "hello");
     receive(&remote, &local, None);
-    remote.get_text("t").insert(5, " world", None, None).unwrap();
-    remote.get_text("t").insert(2, "~", None, None).unwrap(); // inside the editor's "hello"
+    remote.get_text("t").unwrap().insert(5, " world", None, None).unwrap();
+    remote.get_text("t").unwrap().insert(2, "~", None, None).unwrap(); // inside the editor's "hello"
     receive(&local, &remote, Some("remote"));
     insert(&local, &text, "editor", 0, "> ");
     assert_eq!(content(&text), "> he~llo world");
@@ -114,19 +114,19 @@ fn undo_takes_back_the_editors_changes_and_keeps_the_remote_ones() {
 #[test]
 fn remote_changes_after_the_undo_merge_with_it_on_every_replica() {
     let local = doc(1);
-    let text = local.get_text("t");
+    let text = local.get_text("t").unwrap();
     let undo = manager(&local, &text, 0, &["editor"]);
     let remote = doc(2);
     insert(&local, &text, "editor", 0, "abc");
     receive(&remote, &local, None);
 
     assert!(undo.undo().unwrap()); // local: ""
-    remote.get_text("t").insert(3, "!", None, None).unwrap(); // remote, concurrently: "abc!"
+    remote.get_text("t").unwrap().insert(3, "!", None, None).unwrap(); // remote, concurrently: "abc!"
     receive(&local, &remote, Some("remote"));
     receive(&remote, &local, Some("remote"));
 
     assert_eq!(content(&text), "!");
-    assert_eq!(content(&remote.get_text("t")), "!");
+    assert_eq!(content(&remote.get_text("t").unwrap()), "!");
 }
 
 // Redo, capture timeout, clear -----------------------------------------------------------------------
@@ -134,7 +134,7 @@ fn remote_changes_after_the_undo_merge_with_it_on_every_replica() {
 #[test]
 fn redo_brings_back_what_undo_took() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     insert(&doc, &text, "editor", 0, "ab");
     insert(&doc, &text, "editor", 2, "cd");
@@ -156,7 +156,7 @@ fn redo_brings_back_what_undo_took() {
 #[test]
 fn a_new_change_drops_the_redo_stack() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     insert(&doc, &text, "editor", 0, "ab");
     undo.undo().unwrap();
@@ -171,7 +171,7 @@ fn a_new_change_drops_the_redo_stack() {
 #[test]
 fn changes_within_the_capture_timeout_merge_and_stop_capturing_splits_them() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 3_600_000, &["editor"]);
     insert(&doc, &text, "editor", 0, "a");
     insert(&doc, &text, "editor", 1, "b");
@@ -189,7 +189,7 @@ fn changes_within_the_capture_timeout_merge_and_stop_capturing_splits_them() {
 #[test]
 fn a_zero_capture_timeout_makes_every_transaction_an_item() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     for (i, c) in ["a", "b", "c"].iter().enumerate() {
         insert(&doc, &text, "editor", i as u32, c);
@@ -204,7 +204,7 @@ fn a_zero_capture_timeout_makes_every_transaction_an_item() {
 #[test]
 fn clear_empties_both_stacks() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     insert(&doc, &text, "editor", 0, "a");
     insert(&doc, &text, "editor", 1, "b");
@@ -223,7 +223,7 @@ fn clear_empties_both_stacks() {
 #[test]
 fn untracked_origins_are_ignored() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
 
     insert(&doc, &text, "other", 0, "a");
@@ -243,7 +243,7 @@ fn untracked_origins_are_ignored() {
 #[test]
 fn without_tracked_origins_changes_without_an_origin_are_tracked() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = Arc::new(YUndoManager::new(&doc, &text, None).unwrap());
 
     text.insert(0, "a", None, None).unwrap();
@@ -260,7 +260,7 @@ fn without_tracked_origins_changes_without_an_origin_are_tracked() {
 #[test]
 fn undo_transactions_carry_the_managers_origin() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let origins = Arc::new(Mutex::new(vec![]));
     let heard = origins.clone();
@@ -280,8 +280,8 @@ fn undo_transactions_carry_the_managers_origin() {
 #[test]
 fn only_the_scope_is_tracked_and_it_can_grow() {
     let doc = doc(1);
-    let text = doc.get_text("t");
-    let other = doc.get_text("other");
+    let text = doc.get_text("t").unwrap();
+    let other = doc.get_text("other").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
 
     insert(&doc, &other, "editor", 0, "x");
@@ -301,10 +301,10 @@ fn only_the_scope_is_tracked_and_it_can_grow() {
 fn a_text_of_another_document_or_a_preliminary_one_is_refused() {
     let a = doc(1);
     let b = doc(2);
-    assert!(YUndoManager::new(&a, &b.get_text("t"), None).is_err());
+    assert!(YUndoManager::new(&a, &b.get_text("t").unwrap(), None).is_err());
     assert!(matches!(YUndoManager::new(&a, &YText::new_with_text(None), None), Err(Error::InvalidPrelimOp)));
-    let undo = YUndoManager::new(&a, &a.get_text("t"), None).unwrap();
-    assert!(undo.expand_scope(&b.get_text("t")).is_err());
+    let undo = YUndoManager::new(&a, &a.get_text("t").unwrap(), None).unwrap();
+    assert!(undo.expand_scope(&b.get_text("t").unwrap()).is_err());
 }
 
 // Stack item events and their meta --------------------------------------------------------------------
@@ -312,7 +312,7 @@ fn a_text_of_another_document_or_a_preliminary_one_is_refused() {
 #[test]
 fn meta_stored_when_an_item_is_added_comes_back_when_it_is_popped() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let added = Arc::new(Mutex::new(vec![]));
     let popped = Arc::new(Mutex::new(vec![]));
@@ -354,7 +354,7 @@ fn meta_stored_when_an_item_is_added_comes_back_when_it_is_popped() {
 #[test]
 fn an_extended_item_is_an_update_event_and_its_meta_can_change() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 3_600_000, &["editor"]);
     let updated = Arc::new(Mutex::new(vec![]));
     let popped = Arc::new(Mutex::new(vec![]));
@@ -382,7 +382,7 @@ fn an_extended_item_is_an_update_event_and_its_meta_can_change() {
 #[test]
 fn returning_no_meta_keeps_what_the_item_has() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 3_600_000, &["editor"]);
     let popped = Arc::new(Mutex::new(vec![]));
     let _added = undo.clone().observe_item_added(Arc::new(ItemFn(|_| Some(meta("kept", 1.0)))));
@@ -400,7 +400,7 @@ fn returning_no_meta_keeps_what_the_item_has() {
 #[test]
 fn subscriptions_stop_on_unsubscribe_and_release() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let calls = Arc::new(Mutex::new(0));
     let c = calls.clone();
@@ -429,7 +429,7 @@ fn subscriptions_stop_on_unsubscribe_and_release() {
 #[test]
 fn undo_redo_and_clear_inside_a_transaction_throw() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     insert(&doc, &text, "editor", 0, "a");
     let txn = doc.transaction(Some("editor".into())).unwrap();
@@ -448,7 +448,7 @@ fn undo_redo_and_clear_inside_a_transaction_throw() {
 #[test]
 fn undo_inside_a_text_observer_throws() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let results = Arc::new(Mutex::new(vec![]));
     let (u, r) = (undo.clone(), results.clone());
@@ -467,7 +467,7 @@ fn undo_inside_a_text_observer_throws() {
 #[test]
 fn the_manager_cannot_be_used_inside_its_own_callbacks() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let results = Arc::new(Mutex::new(vec![]));
     let (u, r) = (Arc::downgrade(&undo), results.clone());
@@ -502,7 +502,7 @@ fn the_manager_cannot_be_used_inside_its_own_callbacks() {
 #[test]
 fn unsubscribing_inside_a_callback_stops_it() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let calls = Arc::new(Mutex::new(0));
     let holder: Arc<Mutex<Option<Arc<YSubscription>>>> = Arc::new(Mutex::new(None));
@@ -528,7 +528,7 @@ fn unsubscribing_inside_a_callback_stops_it() {
 #[test]
 fn a_released_manager_stops_tracking() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     let sub = undo.clone().observe_item_added(Arc::new(ItemFn(|_| None))).unwrap();
     insert(&doc, &text, "editor", 0, "a");
@@ -543,7 +543,7 @@ fn a_released_manager_stops_tracking() {
 #[test]
 fn releasing_the_manager_while_the_document_is_locked_is_safe() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let undo = manager(&doc, &text, 0, &["editor"]);
     insert(&doc, &text, "editor", 0, "a");
 
@@ -559,7 +559,7 @@ fn releasing_the_manager_while_the_document_is_locked_is_safe() {
 #[test]
 fn releasing_the_manager_inside_a_callback_is_safe() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let holder = Arc::new(Mutex::new(Some(manager(&doc, &text, 0, &["editor"]))));
     let h = holder.clone();
     let _sub = text.observe(Arc::new(TextFn(move |_| {
@@ -580,7 +580,7 @@ fn releasing_the_manager_inside_a_callback_is_safe() {
 #[test]
 fn a_document_and_its_manager_shared_behind_a_lock() {
     let doc = Arc::new(doc(1));
-    let text = Arc::new(doc.get_text("t"));
+    let text = Arc::new(doc.get_text("t").unwrap());
     let undo = manager(&doc, &text, 0, &["editor"]);
     let lock = Arc::new(Mutex::new(()));
     let threads = 8;

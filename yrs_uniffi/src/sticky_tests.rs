@@ -25,7 +25,7 @@ fn doc(client_id: u64) -> YDoc {
 }
 
 fn text_with(doc: &YDoc, content: &str) -> YText {
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, content, None, None).unwrap();
     text
 }
@@ -86,7 +86,7 @@ fn a_position_keeps_its_place_through_remote_edits() {
     let a_text = text_with(&a, "hello world");
     let b = doc(2);
     sync(&a, &b);
-    let b_text = b.get_text("t");
+    let b_text = b.get_text("t").unwrap();
     let w = pos(&b_text, 6, YAssoc::Before); // after the space, on replica B
 
     a_text.insert(0, ">> ", None, None).unwrap();
@@ -162,7 +162,7 @@ fn positions_at_the_end() {
 #[test]
 fn positions_in_an_empty_text() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let before = pos(&text, 0, YAssoc::Before);
     let after = pos(&text, 0, YAssoc::After);
     assert_eq!(at(&doc, &before), Some(0));
@@ -241,7 +241,7 @@ fn a_position_sent_to_another_replica() {
 
     sync(&a, &b);
     assert_eq!(at(&b, &received), Some(6));
-    b.get_text("t").insert(0, "+", None, None).unwrap();
+    b.get_text("t").unwrap().insert(0, "+", None, None).unwrap();
     assert_eq!(at(&b, &received), Some(7));
     assert_eq!(at(&b, &YStickyIndex::decode(end).unwrap()), Some(12));
 }

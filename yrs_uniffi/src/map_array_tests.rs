@@ -218,7 +218,7 @@ fn other_types_changes_dont_reach_a_map_observer() {
     let _sub = map.observe(events.clone()).unwrap();
 
     doc.get_map("other").unwrap().set("k", n(1.0), None).unwrap();
-    doc.get_text("t").insert(0, "x", None, None).unwrap();
+    doc.get_text("t").unwrap().insert(0, "x", None, None).unwrap();
 
     assert!(events.0.lock().unwrap().is_empty());
 }

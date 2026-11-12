@@ -6,7 +6,7 @@ import Ykt
 /// and other replicas, transactions, bytes that aren't a position.
 struct StickyIndexTests {
     private func textWith(_ doc: YDoc, _ content: String) throws -> YText {
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         try text.insert(index: 0, chunk: content)
         return text
     }
@@ -47,7 +47,7 @@ struct StickyIndexTests {
 
     @Test func theStartAndTheEnd() throws {
         let doc = YDoc(options: YDocOptions(clientId: 1))
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let start = try text.stickyIndex(index: 0, assoc: .before)
         let end = try text.stickyIndex(index: 0, assoc: .after) // an empty text: the end
 

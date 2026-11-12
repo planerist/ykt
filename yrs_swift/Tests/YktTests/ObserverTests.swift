@@ -16,7 +16,7 @@ struct ObserverTests {
 
     @Test func insertFormatDeleteAsDeltas() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let deltas = Box<[YDelta]>()
         let sub = try text.observe { deltas.append($0.delta) }
 
@@ -36,7 +36,7 @@ struct ObserverTests {
 
     @Test func oneEventPerTransactionWithItsOrigin() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let events = Box<YTextEvent>()
         let sub = try text.observe { events.append($0) }
 
@@ -56,7 +56,7 @@ struct ObserverTests {
         let a = YDoc(options: YDocOptions(clientId: 1))
         try a.getText(name: "t").insert(index: 0, chunk: "hello")
         let b = YDoc(options: YDocOptions(clientId: 2))
-        let text = b.getText(name: "t")
+        let text = try b.getText(name: "t")
         let events = Box<YTextEvent>()
         let sub = try text.observe { events.append($0) }
 
@@ -69,7 +69,7 @@ struct ObserverTests {
 
     @Test func unsubscribeAndRelease() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let first = Box<Int>()
         let second = Box<Int>()
         let firstSub = try text.observe { _ in first.append(1) }
@@ -93,7 +93,7 @@ struct ObserverTests {
         var sub: YSubscription?
         do {
             let doc = YDoc()
-            let text = doc.getText(name: "t")
+            let text = try doc.getText(name: "t")
             sub = try text.observe { _ in heard.append(1) }
             try text.insert(index: 0, chunk: "a")
         }
@@ -104,8 +104,8 @@ struct ObserverTests {
 
     @Test func readingWritingSubscribingInsideACallbackThrows() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
-        let handle = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
+        let handle = try doc.getText(name: "t")
         let results = Box<String>()
         let sub = try text.observe { _ in
             results.append((try? handle.toText()) == nil ? "read throws" : "read worked")
@@ -122,7 +122,7 @@ struct ObserverTests {
 
     @Test func unsubscribeInsideItsOwnCallback() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let calls = Box<Int>()
         final class Holder: @unchecked Sendable { var sub: YSubscription? }
         let holder = Holder()
@@ -157,7 +157,7 @@ struct ObserverTests {
         let b = YDoc(options: YDocOptions(clientId: 2))
         let updates = Box<YUpdateEvent>()
         let sub = try a.observeUpdateV2 { updates.append($0) }
-        let text = a.getText(name: "t")
+        let text = try a.getText(name: "t")
 
         try text.insert(index: 0, chunk: "hello")
         try a.transact(origin: "editor") { txn in
@@ -182,7 +182,7 @@ struct ObserverTests {
 
     @Test func cleanupStateVectors() throws {
         let doc = YDoc(options: YDocOptions(clientId: 7))
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let events = Box<YTransactionCleanupEvent>()
         let sub = try doc.observeTransactionCleanup { events.append($0) }
 
@@ -203,7 +203,7 @@ struct ObserverTests {
     /// Every callback runs on the thread that committed.
     @Test func sharedDocumentBehindALock() throws {
         let doc = YDoc()
-        let text = doc.getText(name: "t")
+        let text = try doc.getText(name: "t")
         let lock = NSLock()
         let callbackThreads = Box<String>()
         let sub = try text.observe { _ in
@@ -237,10 +237,10 @@ struct ObserverTests {
             var peer: Replica?
             var subs: [YSubscription] = []
             let heardRemote = Box<Int>()
-            init(_ name: String, client: UInt64) {
+            init(_ name: String, client: UInt64) throws {
                 queue = DispatchQueue(label: name)
                 doc = YDoc(options: YDocOptions(clientId: client))
-                text = doc.getText(name: "t")
+                text = try doc.getText(name: "t")
             }
             func start() throws {
                 subs.append(try doc.observeUpdateV2 { [weak self] event in
@@ -252,8 +252,8 @@ struct ObserverTests {
                 })
             }
         }
-        let a = Replica("a", client: 1)
-        let b = Replica("b", client: 2)
+        let a = try Replica("a", client: 1)
+        let b = try Replica("b", client: 2)
         a.peer = b
         b.peer = a
         try a.queue.sync { try a.start() }

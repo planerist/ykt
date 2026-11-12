@@ -81,6 +81,13 @@ fun main() {
 }
 ```
 
+Root types: `YDoc.getText(name)`, `getXmlFragment(name)`, `getMap(name)`, `getArray(name)` return the
+document's root type of that name, creating it the first time (Yjs's `doc.getText` and so on); the same
+name gives the same type, through any handle. They throw `AnotherTx` while the document is locked — in
+an open transaction or an observer's callback — instead of waiting for a lock that can't come there.
+Since 0.5.0 `getText` and `getXmlFragment` throw too (they used to wait, for good, in those places):
+Swift callers need `try`.
+
 Notes:
 - API names may evolve while the Kotlin surface stabilizes.
 - Transactions are recommended for consistent reads/snapshots and are required for XML APIs; YText supports direct ops without an explicit transaction.
@@ -310,8 +317,8 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
   - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
   - [ ] Review & simplify Error types
-  - [ ] `getText` / `getXmlFragment` throwing while the document is locked (as `getMap` / `getArray`
-    do) instead of waiting for the lock — inside a transaction or a callback they block for good
+  - [x] `getText` / `getXmlFragment` throw while the document is locked (as `getMap` / `getArray`)
+    instead of waiting for the lock — inside a transaction or a callback they blocked for good
 
 ## Contributing
 Issues and PRs are welcome! If you’re missing a platform or a specific API, please open an issue to discuss design and approach.

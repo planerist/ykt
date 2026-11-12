@@ -5,7 +5,7 @@ struct YXmlTests {
     @Test func snapshotState() throws {
         let d1 = YDoc(options: YDocOptions(clientId: 1, gc: false))
 
-        let xml = d1.getXmlFragment(name: "xml")
+        let xml = try d1.getXmlFragment(name: "xml")
         try d1.transact { txn in
             let p = try YXmlElement(name: "p", attributes: [:], children: [.text(YXmlText(text: "hello", attributes: [:]))])
             try xml.push(xmlNode: .element(p), txn: txn)
@@ -17,7 +17,7 @@ struct YXmlTests {
 
     @Test func attributes() throws {
         let doc = YDoc(options: YDocOptions(clientId: 1, gc: false))
-        let root = doc.getXmlFragment(name: "test")
+        let root = try doc.getXmlFragment(name: "test")
         let xml = try YXmlElement(name: "div", attributes: [:], children: [])
 
         try root.push(xmlNode: .element(xml))
@@ -47,7 +47,7 @@ struct YXmlTests {
 
     @Test func integerAttributes() throws {
         let doc = YDoc(options: YDocOptions(clientId: 1, gc: false))
-        let root = doc.getXmlFragment(name: "test")
+        let root = try doc.getXmlFragment(name: "test")
         let xml = try YXmlElement(name: "div", attributes: [:], children: [])
 
         try root.push(xmlNode: .element(xml))
@@ -70,7 +70,7 @@ struct YXmlTests {
 
     @Test func siblings() throws {
         let d1 = YDoc(options: YDocOptions(clientId: 1, gc: false))
-        let root = d1.getXmlFragment(name: "test")
+        let root = try d1.getXmlFragment(name: "test")
 
         let first = try d1.transact { txn in
             let p = try YXmlElement(name: "p", attributes: [:], children: [.text(YXmlText(text: "hello"))])

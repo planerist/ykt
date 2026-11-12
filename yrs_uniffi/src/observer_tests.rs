@@ -88,7 +88,7 @@ impl YTransactionCleanupObserver for CleanupRecorder {
 #[test]
 fn insert_is_one_event_with_an_insert() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
 
@@ -101,7 +101,7 @@ fn insert_is_one_event_with_an_insert() {
 #[test]
 fn insert_in_the_middle_retains_up_to_it() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "hello", None, None).unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
@@ -114,7 +114,7 @@ fn insert_in_the_middle_retains_up_to_it() {
 #[test]
 fn delete_retains_then_deletes() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "hello", None, None).unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
@@ -128,7 +128,7 @@ fn delete_retains_then_deletes() {
 #[test]
 fn format_is_a_retain_with_attributes_and_insert_carries_them() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "hello", None, None).unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
@@ -148,7 +148,7 @@ fn format_is_a_retain_with_attributes_and_insert_carries_them() {
 #[test]
 fn removing_an_attribute_sends_null() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "hello", Some(r#"{"bold":true}"#.to_string()), None).unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
@@ -162,7 +162,7 @@ fn removing_an_attribute_sends_null() {
 #[test]
 fn offsets_are_utf16_units() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     text.insert(0, "😀a", None, None).unwrap(); // 😀 is two UTF-16 units
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
@@ -175,7 +175,7 @@ fn offsets_are_utf16_units() {
 #[test]
 fn an_embedded_value_comes_back_as_it_was_inserted() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
     let mention = YValue::AttrMap(HashMap::from([("mention".to_string(), YValue::String("note://1".into()))]));
@@ -190,7 +190,7 @@ fn an_embedded_value_comes_back_as_it_was_inserted() {
 #[test]
 fn a_transaction_is_one_event_with_its_origin() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
 
@@ -208,8 +208,8 @@ fn a_transaction_is_one_event_with_its_origin() {
 #[test]
 fn a_transaction_without_changes_or_with_changes_elsewhere_sends_nothing() {
     let doc = doc(1);
-    let text = doc.get_text("t");
-    let other = doc.get_text("other");
+    let text = doc.get_text("t").unwrap();
+    let other = doc.get_text("other").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
 
@@ -222,9 +222,9 @@ fn a_transaction_without_changes_or_with_changes_elsewhere_sends_nothing() {
 #[test]
 fn a_remote_update_is_an_event_with_the_origin_it_was_applied_with() {
     let a = doc(1);
-    a.get_text("t").insert(0, "hello", None, None).unwrap();
+    a.get_text("t").unwrap().insert(0, "hello", None, None).unwrap();
     let b = doc(2);
-    let text = b.get_text("t");
+    let text = b.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
 
@@ -241,12 +241,12 @@ fn a_remote_update_is_an_event_with_the_origin_it_was_applied_with() {
 fn concurrent_edits_merge_into_one_delta_for_the_observer() {
     let a = doc(1);
     let b = doc(2);
-    a.get_text("t").insert(0, "base", None, None).unwrap();
+    a.get_text("t").unwrap().insert(0, "base", None, None).unwrap();
     apply_update_v2(&b, &encode_state_as_update_v2(&a, None).unwrap(), None).unwrap();
     // Both edit the same text at once.
-    a.get_text("t").insert(0, "A", None, None).unwrap();
-    b.get_text("t").insert(4, "B", None, None).unwrap();
-    let text = b.get_text("t");
+    a.get_text("t").unwrap().insert(0, "A", None, None).unwrap();
+    b.get_text("t").unwrap().insert(4, "B", None, None).unwrap();
+    let text = b.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let _sub = text.observe(rec.clone()).unwrap();
 
@@ -261,7 +261,7 @@ fn concurrent_edits_merge_into_one_delta_for_the_observer() {
 #[test]
 fn two_observers_both_hear_and_one_can_leave() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let first = Arc::new(TextRecorder::default());
     let second = Arc::new(TextRecorder::default());
     let first_sub = text.observe(first.clone()).unwrap();
@@ -278,7 +278,7 @@ fn two_observers_both_hear_and_one_can_leave() {
 #[test]
 fn unsubscribing_twice_says_so_and_stops_for_good() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     let sub = text.observe(rec.clone()).unwrap();
     assert!(sub.is_active());
@@ -294,7 +294,7 @@ fn unsubscribing_twice_says_so_and_stops_for_good() {
 #[test]
 fn releasing_the_subscription_unsubscribes() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(TextRecorder::default());
     {
         let _sub = text.observe(rec.clone()).unwrap();
@@ -310,7 +310,7 @@ fn the_subscription_may_outlive_the_document() {
     let rec = Arc::new(TextRecorder::default());
     let sub = {
         let doc = doc(1);
-        let text = doc.get_text("t");
+        let text = doc.get_text("t").unwrap();
         let sub = text.observe(rec.clone()).unwrap();
         text.insert(0, "a", None, None).unwrap();
         sub
@@ -349,8 +349,8 @@ impl YTextObserver for Misbehaving {
 #[test]
 fn reading_writing_or_subscribing_inside_a_callback_fails() {
     let doc = doc(1);
-    let text = doc.get_text("t");
-    let observer = Arc::new(Misbehaving { text: doc.get_text("t"), results: Mutex::new(vec![]) });
+    let text = doc.get_text("t").unwrap();
+    let observer = Arc::new(Misbehaving { text: doc.get_text("t").unwrap(), results: Mutex::new(vec![]) });
     let _sub = text.observe(observer.clone()).unwrap();
 
     text.insert(0, "a", None, None).unwrap();
@@ -379,7 +379,7 @@ impl YTextObserver for OneShot {
 #[test]
 fn unsubscribing_inside_its_own_callback_stops_it() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let observer = Arc::new(OneShot { sub: Mutex::new(None), calls: Mutex::new(0) });
     let other = Arc::new(TextRecorder::default());
     let sub = text.observe(observer.clone()).unwrap();
@@ -402,7 +402,7 @@ fn update_events_replay_on_another_replica() {
         let b = doc(2);
         let rec = Arc::new(UpdateRecorder::default());
         let _sub = if v2 { a.observe_update_v2(rec.clone()) } else { a.observe_update_v1(rec.clone()) }.unwrap();
-        let text = a.get_text("t");
+        let text = a.get_text("t").unwrap();
 
         text.insert(0, "hello", None, None).unwrap();
         let txn = Arc::new(a.transaction(Some("editor".into())).unwrap());
@@ -421,14 +421,14 @@ fn update_events_replay_on_another_replica() {
                 crate::snapshots::apply_update(&b, &event.update, None).unwrap();
             }
         }
-        assert_eq!(b.get_text("t").to_string(None).unwrap(), "ello world");
+        assert_eq!(b.get_text("t").unwrap().to_string(None).unwrap(), "ello world");
     }
 }
 
 #[test]
 fn applying_a_remote_update_is_an_update_event_too() {
     let a = doc(1);
-    a.get_text("t").insert(0, "hi", None, None).unwrap();
+    a.get_text("t").unwrap().insert(0, "hi", None, None).unwrap();
     let b = doc(2);
     let rec = Arc::new(UpdateRecorder::default());
     let _sub = b.observe_update_v2(rec.clone()).unwrap();
@@ -483,7 +483,7 @@ impl YUpdateObserver for OneShotUpdate {
 #[test]
 fn unsubscribing_from_updates_inside_the_callback_stops_it() {
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let observer = Arc::new(OneShotUpdate { sub: Mutex::new(None), calls: Mutex::new(0) });
     let sub = doc.observe_update_v2(observer.clone()).unwrap();
     *observer.sub.lock().unwrap() = Some(sub);
@@ -499,7 +499,7 @@ fn unsubscribing_from_updates_inside_the_callback_stops_it() {
 fn update_subscriptions_end_on_release_and_may_outlive_the_document() {
     let rec = Arc::new(UpdateRecorder::default());
     let doc = doc(1);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     {
         let _sub = doc.observe_update_v1(rec.clone()).unwrap();
         text.insert(0, "a", None, None).unwrap();
@@ -516,7 +516,7 @@ fn update_subscriptions_end_on_release_and_may_outlive_the_document() {
 #[test]
 fn cleanup_events_carry_the_state_before_and_after_and_what_was_deleted() {
     let doc = doc(7);
-    let text = doc.get_text("t");
+    let text = doc.get_text("t").unwrap();
     let rec = Arc::new(CleanupRecorder::default());
     let _sub = doc.observe_transaction_cleanup(rec.clone()).unwrap();
 
@@ -548,7 +548,7 @@ fn cleanup_events_carry_the_state_before_and_after_and_what_was_deleted() {
 #[test]
 fn a_shared_document_behind_a_lock_calls_observers_on_the_committing_thread() {
     let doc = Arc::new(doc(1));
-    let text = Arc::new(doc.get_text("t"));
+    let text = Arc::new(doc.get_text("t").unwrap());
     let lock = Arc::new(Mutex::new(()));
     let rec = Arc::new(TextRecorder::default());
     let updates = Arc::new(UpdateRecorder::default());
@@ -606,7 +606,7 @@ fn two_replicas_on_two_threads_converge_through_update_events() {
     let run = |client: u64, letter: &'static str, out: std::sync::mpsc::Sender<Vec<u8>>, inbox: std::sync::mpsc::Receiver<Vec<u8>>, done: Arc<Barrier>| {
         thread::spawn(move || {
             let doc = doc(client);
-            let text = doc.get_text("t");
+            let text = doc.get_text("t").unwrap();
             let heard = Arc::new(TextRecorder::default());
             let _heard_sub = text.observe(heard.clone()).unwrap();
             let _forward = doc.observe_update_v2(Arc::new(Forward(Mutex::new(out)))).unwrap();

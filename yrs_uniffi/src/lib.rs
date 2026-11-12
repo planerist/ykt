@@ -9,6 +9,9 @@ mod delta;
 mod observers;
 #[cfg(test)]
 mod observer_tests;
+mod updates;
+#[cfg(test)]
+mod update_tests;
 mod xml_frag;
 mod xml_elem;
 mod xml_text;

@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, basic XML types, and core document/transaction flow.
 
 ## Quick start
 
@@ -126,6 +126,35 @@ Rules:
   replicas through their update events (see the threading tests in `yrs_uniffi/src/observer_tests.rs`,
   `yrs_swift/Tests/YktTests/ObserverTests.swift`, `yrs_kt/src/test/kotlin/ObserverTest.kt`).
 
+## Update utilities
+Functions on encoded updates alone, no document needed (Yjs's `mergeUpdates`, `diffUpdate`,
+`encodeStateVectorFromUpdate`): a server or an outbox can compact stored updates, or answer a
+replica's sync request, without loading the document.
+
+- `mergeUpdatesV1` / `mergeUpdatesV2(updates)` — one update that is all of them: applying it is the
+  same as applying each in turn, in any order (an empty list gives an empty update);
+- `diffUpdateV1` / `diffUpdateV2(update, stateVector)` — what of `update` a replica with that state
+  vector lacks (deletions always included);
+- `encodeStateVectorFromUpdateV1` / `V2(update)` — the state vector of a document that has exactly
+  that update.
+
+State vectors are always lib0 v1 here, whatever the update's encoding (as in Yjs, where both
+encodings of a state vector are the same bytes): what `encodeStateVector(doc)` and
+`YTransaction.stateVectorV1()` return. Bytes that aren't a valid update or state vector throw
+`InvalidData`; they never crash the process.
+
+```kotlin
+val stored: List<ByteArray> = loadUpdates(noteId)          // v2 updates, as observeUpdateV2 sent them
+val compacted = mergeUpdatesV2(stored)                       // store this one instead
+val reply = diffUpdateV2(compacted, clientStateVector)       // what the client lacks
+```
+
+```swift
+let compacted = try mergeUpdatesV2(updates: stored)
+let reply = try diffUpdateV2(update: compacted, stateVector: clientStateVector)
+let state = try encodeStateVectorFromUpdateV2(update: compacted)
+```
+
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
 
@@ -165,7 +194,7 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
     place through remote edits; encode/decode
   - [ ] YUndoManager (scope, tracked origins, capture timeout, stack item events)
-  - [ ] Update utilities without a document: merge_updates, diff_update,
+  - [x] Update utilities without a document: merge_updates, diff_update,
     encode_state_vector_from_update (v1 and v2)
   - [ ] Awareness
 

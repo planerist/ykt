@@ -8,3 +8,7 @@ members = [
 codegen-units = 1
 opt-level = 3
 lto = true
+
+# yrs 0.28.0 with fixes for updates out of order (vendor/README.md); drop once upstream has them.
+[patch.crates-io]
+yrs = { path = "vendor/yrs" }

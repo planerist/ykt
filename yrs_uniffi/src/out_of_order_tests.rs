@@ -3,9 +3,9 @@
 //! or as a diff, in lib0 v1 and v2: the bytes read on a fresh replica, which converges once the
 //! missing updates arrive. yrs 0.28's own v2 writer failed here (`updates::DocEncoderV2`).
 //!
-//! Not checked: that a replica reads what the server does before everything arrives. yrs 0.28
-//! integrates a client's update over the gap its missing earlier ones leave, so what it shows (and
-//! even the end result) can depend on the order updates came in.
+//! And what yrs 0.28 got wrong underneath, fixed in `vendor/yrs`: it integrated a client's update
+//! over the gap its missing earlier ones leave, so the document depended on the order updates came
+//! in, and some were lost for good. A client's updates now wait for its earlier ones, as in Yjs.
 
 use crate::doc::{YDoc, YDocOptions};
 use crate::observers::{YUpdateEvent, YUpdateObserver};
@@ -191,7 +191,8 @@ fn out_of_order_updates_of_several_clients_encode_readably() {
             let at = format!("seed {seed} step {step}");
             let v2 = replica_of(&encode_state_as_update_v2(&server, None).unwrap(), true, &at);
             let v1 = replica_of(&encode_state_as_update(&server, None).unwrap(), false, &at);
-            assert_eq!(text_of(&v2), text_of(&v1), "{at}: both encodings say the same");
+            assert_eq!(text_of(&v2), text_of(&server), "{at}: the replica reads what the server has");
+            assert_eq!(text_of(&v1), text_of(&server), "{at}: in v1 too");
             // As a diff for a replica behind: it reads, in both encodings.
             replica_of(&encode_state_as_update_v2(&server, behind_vector()).unwrap(), true, &at);
             replica_of(&encode_state_as_update(&server, behind_vector()).unwrap(), false, &at);
@@ -200,10 +201,58 @@ fn out_of_order_updates_of_several_clients_encode_readably() {
             }
         }
 
-        // A replica made from the state halfway, then every update: it reads them all.
+        // A replica made from the state halfway, then every update: it has what the server has.
         let late = replica_of(&middle.unwrap(), true, "halfway");
         for u in &updates {
             apply_update_v2(&late, u, None).unwrap();
         }
+        assert_eq!(text_of(&late), text_of(&server), "seed {seed}: converged");
     }
+}
+
+#[test]
+fn every_order_of_the_same_updates_gives_the_same_document() {
+    for seed in 1..=30 {
+        let updates = interleaved_updates(seed, 25);
+        let in_order = doc(1);
+        for u in &updates {
+            apply_update_v2(&in_order, u, None).unwrap();
+        }
+        let mut shuffled = updates.clone();
+        Random(seed + 7).shuffle(&mut shuffled);
+        let out_of_order = doc(2);
+        for u in &shuffled {
+            apply_update_v2(&out_of_order, u, None).unwrap();
+        }
+        assert_eq!(text_of(&out_of_order), text_of(&in_order), "seed {seed}");
+        assert_eq!(encode_state_vector(&out_of_order).unwrap(), encode_state_vector(&in_order).unwrap(), "seed {seed}: nothing left waiting");
+    }
+}
+
+#[test]
+fn a_clients_update_waits_for_its_earlier_ones() {
+    // Client 1 writes "ab". Client 2 writes "X" at the start, "Y" after it, then "Z" between "a"
+    // and "b": the last builds on client 1's text only, not on client 2's earlier edits.
+    let one = doc(1);
+    let ab = edit(&one, |t, txn| t.insert(0, "ab", None, txn).unwrap());
+    let two = doc(2);
+    apply_update_v2(&two, &ab, None).unwrap();
+    let x = edit(&two, |t, txn| t.insert(0, "X", None, txn).unwrap());
+    let y = edit(&two, |t, txn| t.insert(1, "Y", None, txn).unwrap());
+    let z = edit(&two, |t, txn| t.insert(3, "Z", None, txn).unwrap());
+    assert_eq!(text_of(&two), "XYaZb");
+
+    // Without "X", neither "Y" nor "Z" is in, whatever the order: they wait, as in Yjs. yrs 0.28
+    // showed "Z" in the first order only.
+    let mut texts = vec![];
+    for order in [[&ab, &y, &z], [&z, &y, &ab]] {
+        let server = doc(3);
+        for u in order {
+            apply_update_v2(&server, u, None).unwrap();
+        }
+        texts.push(text_of(&server));
+        apply_update_v2(&server, &x, None).unwrap();
+        assert_eq!(text_of(&server), "XYaZb");
+    }
+    assert_eq!(texts, ["ab", "ab"]);
 }

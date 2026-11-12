@@ -25,7 +25,8 @@ pub(crate) enum Error {
     AnotherTx,
     #[error("another read-write transaction is in progress")]
     AnotherRwTx,
-    // OutOfBounds, //"index outside of the bounds of an array";
+    #[error("index outside of the bounds of a collection")]
+    OutOfBounds,
     // KeyNotFound, //"key was not found in a map";
     #[error("preliminary type doesn't support this operation")]
     InvalidPrelimOp,

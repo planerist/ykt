@@ -3,6 +3,7 @@ use crate::collection::SharedCollection;
 use crate::delta::YDelta::YInsert;
 use crate::delta::{y_into_delta, YDelta};
 use crate::snapshots::YSnapshot;
+use crate::sticky::{YAssoc, YStickyIndex};
 use crate::tools::Error;
 use crate::tools::Result;
 use crate::transaction::YTransaction;
@@ -295,6 +296,20 @@ impl YText {
                     removed
                 }))
             }
+        }
+    }
+
+    /// A relative position at `index` (UTF-16 units) of this text, as Yjs's
+    /// `createRelativePositionFromTypeIndex`: it keeps its place through later edits, local and
+    /// remote (see `YStickyIndex`). `assoc` says which neighbour it sticks to. Throws `OutOfBounds`
+    /// past the end; at the end with `After` it stays at the end.
+    #[uniffi::method(default(txn=None))]
+    pub fn sticky_index(&self, index: u32, assoc: YAssoc, txn: Option<Arc<YTransaction>>) -> Result<YStickyIndex> {
+        match self.inner.borrow().deref() {
+            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
+            SharedCollection::Integrated(c) => c.read(txn, |text, view| {
+                YStickyIndex::at(text, view, index, text.len(view), assoc)
+            }),
         }
     }
 

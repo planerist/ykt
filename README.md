@@ -10,7 +10,7 @@ Kotlin bindings for the [Y‑CRDT](https://github.com/y-crdt/) ecosystem. Ykt br
 ## Status
 This project is actively developed and used in real projects. The foundation is stable thanks to Yrs. The primary limitation at this stage is an incomplete Kotlin API surface (not stability or performance).
 
-Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, basic XML types, and core document/transaction flow.
+Currently solid: YText (deltas, formatting, transactions, observers), document update and transaction observers, update utilities without a document, relative positions, basic XML types, and core document/transaction flow.
 
 ## Quick start
 
@@ -155,6 +155,38 @@ let reply = try diffUpdateV2(update: compacted, stateVector: clientStateVector)
 let state = try encodeStateVectorFromUpdateV2(update: compacted)
 ```
 
+## Relative positions
+A place in a text that keeps its spot through local and remote edits — a caret, the ends of a
+selection, a comment's range (yrs's `StickyIndex`, Yjs's `RelativePosition`):
+
+- `YText.stickyIndex(index, assoc, txn?)` — the position at `index` (UTF-16 units), as Yjs's
+  `createRelativePositionFromTypeIndex`; `OutOfBounds` past the end;
+- `YStickyIndex.offset(doc, txn?)` — where it is now, as `YStickyOffset(index, assoc)` (Yjs's
+  `createAbsolutePositionFromRelativePosition`); `null` while the document lacks what it refers to
+  (made on a replica whose changes haven't arrived). A position whose neighbour was deleted
+  collapses to where the deleted part was;
+- `encode()` / `YStickyIndex.decode(bytes)` — Yjs's encoding (`encodeRelativePosition`), so
+  positions travel between ykt and Yjs clients; garbage throws `InvalidData`. Positions compare
+  equal by value, and print as `YStickyIndex(after 1#5)`.
+
+`YAssoc` says which neighbour it sticks to, so where an insert exactly at the position goes:
+`After` (Yjs's default, `assoc >= 0`) sticks to the character after it, so the insert goes before
+the position and the position moves on; `Before` sticks to the character before it, so the position
+stays. At the very start `Before` and at the very end `After` stay at the start / the end.
+
+```kotlin
+val anchor = text.stickyIndex(selection.start, YAssoc.AFTER)
+val head = text.stickyIndex(selection.end, YAssoc.BEFORE)
+send(anchor.encode())                                  // or keep it across remote updates
+val start = YStickyIndex.decode(bytes).offset(doc)?.index
+```
+
+```swift
+let caret = try text.stickyIndex(index: 5, assoc: .after)
+try applyUpdateV2(doc: doc, update: remote)
+let index = try caret.offset(doc: doc)?.index        // moved with the text around it
+```
+
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
 
@@ -191,8 +223,8 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] YWeakLink
 
 - Collaboration
-  - [ ] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
-    place through remote edits; encode/decode
+  - [x] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
+    place through remote edits; encode/decode (in YText; YArray positions later)
   - [ ] YUndoManager (scope, tracked origins, capture timeout, stack item events)
   - [x] Update utilities without a document: merge_updates, diff_update,
     encode_state_vector_from_update (v1 and v2)

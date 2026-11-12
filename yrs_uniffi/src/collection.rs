@@ -2,7 +2,7 @@ use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::{BranchID, Doc, Hook, ReadTxn, SharedRef, Transact, Transaction, TransactionMut};
+use yrs::{BranchID, Doc, Hook, ReadTxn, SharedRef, Store, Transact, Transaction, TransactionMut};
 
 #[derive(Clone)]
 pub enum SharedCollection<P, S> {
@@ -119,6 +119,30 @@ impl<S: SharedRef + 'static> Integrated<S> {
         }
     }
 
+    /// As `readonly`, without a transaction of its own when none is given: a read-only one, which
+    /// commits nothing (no empty transaction reaching the document's observers).
+    pub fn read<F, R>(&self, txn: Option<Arc<YTransaction>>, f: F) -> Result<R>
+    where
+        F: FnOnce(&S, &ReadView<'_>) -> Result<R>,
+    {
+        match txn {
+            Some(txn) => {
+                let inner = txn.get_inner();
+                let txn = inner.borrow();
+                if txn.committed {
+                    return Err(Error::TxnCommitted);
+                }
+                let view = ReadView(txn.store());
+                f(&self.resolve(&view)?, &view)
+            }
+            None => {
+                let txn = self.transact()?;
+                let view = ReadView(txn.store());
+                f(&self.resolve(&view)?, &view)
+            }
+        }
+    }
+
     pub fn resolve<T: ReadTxn>(&self, txn: &T) -> Result<S> {
         match self.hook.get(txn) {
             Some(shared_ref) => Ok(shared_ref),
@@ -139,4 +163,19 @@ impl<S: SharedRef + 'static> Integrated<S> {
             Err(_) => Err(Error::AnotherTx),
         }
     }
+}
+
+/// Read access to a document's store, whichever transaction holds it (a read-only one or a
+/// read-write one).
+pub struct ReadView<'a>(pub &'a Store);
+
+impl ReadTxn for ReadView<'_> {
+    fn store(&self) -> &Store {
+        self.0
+    }
+}
+
+/// Whether two handles are the same document (yrs's `==` compares guids, which replicas share).
+pub fn same_doc(a: &Doc, b: &Doc) -> bool {
+    a.clone().as_raw() == b.clone().as_raw()
 }

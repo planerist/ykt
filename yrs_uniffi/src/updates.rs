@@ -67,14 +67,14 @@ pub fn encode_state_vector_from_update_v2(update: Vec<u8>) -> Result<Vec<u8>> {
 }
 
 /// Runs a decoding step on bytes from outside: a decoding error, or a panic inside yrs on malformed
-/// input, becomes `InvalidData`.
-fn decoding<F>(f: F) -> Result<Vec<u8>>
+/// input (its v2 decoder has some), becomes `InvalidData`.
+pub(crate) fn decoding<T, F>(f: F) -> Result<T>
 where
-    F: FnOnce() -> std::result::Result<Vec<u8>, yrs::encoding::read::Error>,
+    F: FnOnce() -> std::result::Result<T, yrs::encoding::read::Error>,
 {
     match catch_unwind(AssertUnwindSafe(f)) {
-        Ok(Ok(bytes)) => Ok(bytes),
+        Ok(Ok(value)) => Ok(value),
         Ok(Err(e)) => Err(Error::InvalidData(e.to_string())),
-        Err(_) => Err(Error::InvalidData("malformed update".into())),
+        Err(_) => Err(Error::InvalidData("malformed input".into())),
     }
 }

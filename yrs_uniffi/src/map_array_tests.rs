@@ -8,6 +8,7 @@ use crate::array::{YArrayDelta, YArrayEvent, YArrayObserver};
 use crate::attrs::YValue;
 use crate::doc::{YDoc, YDocOptions};
 use crate::map::{YEntryChange, YMapEvent, YMapObserver};
+use crate::output::YOutput;
 use crate::snapshots::{apply_update_v2, encode_state_as_update_v2};
 use crate::tools::Error;
 use std::collections::HashMap;
@@ -39,6 +40,14 @@ fn s(v: &str) -> YValue {
 
 fn n(v: f64) -> YValue {
     YValue::Number(v)
+}
+
+fn out(value: YValue) -> YOutput {
+    YOutput::Value { value }
+}
+
+fn outs(values: Vec<YValue>) -> Vec<YOutput> {
+    values.into_iter().map(out).collect()
 }
 
 /// One value of every kind, nested ones too, as they read back.
@@ -174,17 +183,17 @@ fn a_map_observer_hears_each_keys_change_with_old_and_new_values() {
     assert_eq!(
         events[0].keys,
         HashMap::from([
-            ("new".into(), YEntryChange::Inserted { value: s("y") }),
-            ("kept".into(), YEntryChange::Updated { old_value: n(1.0), new_value: n(10.0) }),
-            ("gone".into(), YEntryChange::Removed { old_value: n(2.0) }),
+            ("new".into(), YEntryChange::Inserted { value: out(s("y")) }),
+            ("kept".into(), YEntryChange::Updated { old_value: out(n(1.0)), new_value: out(n(10.0)) }),
+            ("gone".into(), YEntryChange::Removed { old_value: out(n(2.0)) }),
         ])
     );
     assert_eq!(events[0].origin, Some(b"editor".to_vec()));
     assert_eq!(
         events[1].keys,
         HashMap::from([
-            ("new".into(), YEntryChange::Removed { old_value: s("y") }),
-            ("kept".into(), YEntryChange::Removed { old_value: n(10.0) }),
+            ("new".into(), YEntryChange::Removed { old_value: out(s("y")) }),
+            ("kept".into(), YEntryChange::Removed { old_value: out(n(10.0)) }),
         ])
     );
     assert_eq!(events[1].origin, None);
@@ -206,7 +215,7 @@ fn a_map_observer_hears_remote_updates_once_and_stops_when_released() {
 
     let events = events.0.lock().unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].keys, HashMap::from([("k".into(), YEntryChange::Inserted { value: n(1.0) })]));
+    assert_eq!(events[0].keys, HashMap::from([("k".into(), YEntryChange::Inserted { value: out(n(1.0)) })]));
     assert_eq!(events[0].origin, Some(b"server".to_vec()));
 }
 
@@ -332,9 +341,9 @@ fn an_array_observer_hears_deltas_with_their_origin() {
     assert_eq!(
         deltas,
         vec![
-            vec![YArrayDelta::Insert(vec![n(1.0), n(2.0), n(3.0)])],
-            vec![YArrayDelta::Retain(1), YArrayDelta::Insert(vec![s("x")])],
-            vec![YArrayDelta::Delete(1), YArrayDelta::Retain(3), YArrayDelta::Insert(vec![YValue::Bool(true)])],
+            vec![YArrayDelta::Insert(outs(vec![n(1.0), n(2.0), n(3.0)]))],
+            vec![YArrayDelta::Retain(1), YArrayDelta::Insert(outs(vec![s("x")]))],
+            vec![YArrayDelta::Delete(1), YArrayDelta::Retain(3), YArrayDelta::Insert(outs(vec![YValue::Bool(true)]))],
         ]
     );
     assert_eq!(events.iter().map(|e| e.origin.clone()).collect::<Vec<_>>(), vec![None, None, Some(b"editor".to_vec())]);
@@ -355,7 +364,7 @@ fn an_array_observer_hears_remote_updates_and_stops_when_released() {
 
     let events = events.0.lock().unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].delta, vec![YArrayDelta::Insert(vec![s("x")])]);
+    assert_eq!(events[0].delta, vec![YArrayDelta::Insert(outs(vec![s("x")]))]);
     assert_eq!(events[0].origin, Some(b"server".to_vec()));
 }
 

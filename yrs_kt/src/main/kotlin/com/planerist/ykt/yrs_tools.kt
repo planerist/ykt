@@ -123,6 +123,13 @@ fun YUndoManager.observeItemPopped(onPop: (YUndoEvent) -> Unit): YSubscription =
         override fun onPop(event: YUndoEvent) = onPop.invoke(event)
     })
 
+// Nested shared types: what a YOutput holds, or null for anything else.
+val YOutput.asValue: YValue? get() = (this as? YOutput.Value)?.value
+val YOutput.asText: YText? get() = (this as? YOutput.Text)?.text
+val YOutput.asMap: YMap? get() = (this as? YOutput.Map)?.map
+val YOutput.asArray: YArray? get() = (this as? YOutput.Array)?.array
+val YOutput.asDoc: YDoc? get() = (this as? YOutput.Doc)?.doc
+
 /** The transaction's origin as text (`transaction(origin)` takes a string). */
 val YTextEvent.originString: String? get() = origin?.decodeToString()
 val YUpdateEvent.originString: String? get() = origin?.decodeToString()

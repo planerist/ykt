@@ -1,36 +1,43 @@
-//! `YMap`: a shared map of string keys to values (Yjs's `Y.Map`). Values are `YValue`s; a shared type
-//! nested in a map (written by a client that has them, as Yjs) is read in its JSON form — nested
-//! shared types aren't in ykt's API yet.
+//! `YMap`: a shared map of string keys to values (Yjs's `Y.Map`). Values are plain (`YValue`) or
+//! shared types nested in the map — a text, a map, an array, a subdocument — made with `setText`,
+//! `setMap`, `setArray`, `setDoc` and read back as handles with `getOutput`; `get`, `values` and
+//! `toJson` give a nested type in its JSON form.
 
+use crate::array::YArray;
 use crate::attrs::{out_into_yvalue, YAttributes, YValue};
-use crate::collection::Integrated;
+use crate::collection::{Integrated, SharedCollection, YBranchId};
+use crate::doc::YDoc;
 use crate::observers::{origin_bytes, subscription_key, ObserveResult, YSubscription};
-use crate::tools::Result;
+use crate::output::YOutput;
+use crate::text::YText;
+use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::{EntryChange, ToJson};
-use yrs::{Any, Map, MapRef, Observable, TransactionMut};
+use yrs::{Any, ArrayPrelim, Map, MapPrelim, MapRef, Observable, ReadTxn, TextPrelim, Transact, TransactionMut};
 
 /// A shared map (see the module docs). Reads take a read-only transaction when none is given;
-/// writes, a transaction of their own.
+/// writes, a transaction of their own. Two handles of the same map compare equal.
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 pub struct YMap(pub(crate) Integrated<MapRef>);
 
 // SAFETY: as YText: the embedding application calls into a document one call at a time.
 unsafe impl Send for YMap {}
 unsafe impl Sync for YMap {}
 
-/// What happened to one key of a map in a transaction.
-#[derive(uniffi::Enum, Clone, Debug, PartialEq)]
+/// What happened to one key of a map in a transaction. A shared type comes as a handle.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq, Eq)]
+#[uniffi::export(Eq)]
 pub enum YEntryChange {
     /// The key is new, with this value.
-    Inserted { value: YValue },
+    Inserted { value: YOutput },
     /// The key had `old_value`, now `new_value`.
-    Updated { old_value: YValue, new_value: YValue },
+    Updated { old_value: YOutput, new_value: YOutput },
     /// The key, with `old_value`, was deleted.
-    Removed { old_value: YValue },
+    Removed { old_value: YOutput },
 }
 
 /// What a map's observer gets for a committed transaction that changed the map.
@@ -59,10 +66,58 @@ impl YMap {
         })
     }
 
-    /// The value of `key`; `null` if the map hasn't got it.
+    /// Sets `key` to a new text with `text` in it (Yjs's `map.set(key, new Y.Text(text))`), and
+    /// returns it.
+    #[uniffi::method(default(text = None, txn = None))]
+    pub fn set_text(&self, key: &str, text: Option<String>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YText>> {
+        self.0.mutably(txn, |map, txn| {
+            let nested = map.insert(txn, key, TextPrelim::new(text.unwrap_or_default()));
+            Ok(Arc::new(YText::new(SharedCollection::integrated(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Sets `key` to a new map with `entries` in it, and returns it.
+    #[uniffi::method(default(entries = None, txn = None))]
+    pub fn set_map(&self, key: &str, entries: Option<YAttributes>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YMap>> {
+        self.0.mutably(txn, |map, txn| {
+            let nested = map.insert(txn, key, map_prelim(entries));
+            Ok(Arc::new(YMap(Integrated::new(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Sets `key` to a new array with `values` in it, and returns it.
+    #[uniffi::method(default(values = None, txn = None))]
+    pub fn set_array(&self, key: &str, values: Option<Vec<YValue>>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YArray>> {
+        self.0.mutably(txn, |map, txn| {
+            let nested = map.insert(txn, key, array_prelim(values));
+            Ok(Arc::new(YArray(Integrated::new(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Sets `key` to `doc` as a subdocument (Yjs's subdocuments), and returns its handle in this
+    /// document. `doc` must be a new document, not a subdocument already (`AlreadyIntegrated`); a
+    /// subdocument can't hold subdocuments of its own in yrs (`WrongDocument`).
+    #[uniffi::method(default(txn = None))]
+    pub fn set_doc(&self, key: &str, doc: &YDoc, txn: Option<Arc<YTransaction>>) -> Result<Arc<YDoc>> {
+        let subdoc = subdoc_prelim(doc, &self.0.doc)?;
+        self.0.mutably(txn, |map, txn| {
+            check_subdoc_parent(txn)?;
+            Ok(Arc::new(YDoc(map.insert(txn, key, subdoc))))
+        })
+    }
+
+    /// The value of `key`; `null` if the map hasn't got it. A shared type comes in its JSON form
+    /// (`getOutput` gives its handle).
     #[uniffi::method(default(txn = None))]
     pub fn get(&self, key: &str, txn: Option<Arc<YTransaction>>) -> Result<Option<YValue>> {
         self.0.read(txn, |map, txn| Ok(map.get(txn, key).map(|v| out_into_yvalue(&v, txn))))
+    }
+
+    /// The value of `key` as a plain value or a shared type's handle; `null` if the map hasn't got
+    /// it.
+    #[uniffi::method(default(txn = None))]
+    pub fn get_output(&self, key: &str, txn: Option<Arc<YTransaction>>) -> Result<Option<YOutput>> {
+        self.0.read(txn, |map, txn| Ok(map.get(txn, key).map(|v| YOutput::from_out(v, &self.0.doc, txn))))
     }
 
     /// Deletes `key`. Returns the value it had, `null` if the map hadn't got it.
@@ -112,6 +167,11 @@ impl YMap {
         })
     }
 
+    /// The map's identity in its document, the same on every replica (see `YText.id`).
+    pub fn id(&self) -> YBranchId {
+        self.0.id().into()
+    }
+
     /// Calls `observer` after every committed transaction that changed this map, with the changed
     /// keys and the transaction's origin (Yjs's `ymap.observe`). The callback runs on the
     /// committing thread while the document is still locked: it must not read or write the
@@ -137,18 +197,46 @@ impl YMap {
     }
 }
 
-fn key_changes(keys: &HashMap<Arc<str>, EntryChange>, txn: &TransactionMut) -> HashMap<String, YEntryChange> {
+pub(crate) fn key_changes(keys: &HashMap<Arc<str>, EntryChange>, txn: &TransactionMut) -> HashMap<String, YEntryChange> {
+    let out = |value: &yrs::Out| YOutput::from_out(value.clone(), txn.doc(), txn);
     keys.iter()
         .map(|(key, change)| {
             let change = match change {
-                EntryChange::Inserted(value) => YEntryChange::Inserted { value: out_into_yvalue(value, txn) },
-                EntryChange::Updated(old, new) => YEntryChange::Updated {
-                    old_value: out_into_yvalue(old, txn),
-                    new_value: out_into_yvalue(new, txn),
-                },
-                EntryChange::Removed(old) => YEntryChange::Removed { old_value: out_into_yvalue(old, txn) },
+                EntryChange::Inserted(value) => YEntryChange::Inserted { value: out(value) },
+                EntryChange::Updated(old, new) => YEntryChange::Updated { old_value: out(old), new_value: out(new) },
+                EntryChange::Removed(old) => YEntryChange::Removed { old_value: out(old) },
             };
             (key.to_string(), change)
         })
         .collect()
+}
+
+pub(crate) fn map_prelim(entries: Option<YAttributes>) -> MapPrelim {
+    entries.unwrap_or_default().into_iter().map(|(k, v)| (k, Into::<Any>::into(v))).collect()
+}
+
+pub(crate) fn array_prelim(values: Option<Vec<YValue>>) -> ArrayPrelim {
+    values.unwrap_or_default().into_iter().map(Into::<Any>::into).collect()
+}
+
+/// `doc`, to insert into `parent` as a subdocument: a new one (`AlreadyIntegrated` for a
+/// subdocument, or the parent itself). yrs's own check would wait for `doc`'s lock: this one throws.
+pub(crate) fn subdoc_prelim(doc: &YDoc, parent: &yrs::Doc) -> Result<yrs::Doc> {
+    if crate::collection::same_doc(&doc.0, parent) {
+        return Err(Error::AlreadyIntegrated);
+    }
+    let is_subdoc = doc.0.try_transact().map_err(|_| Error::Locked)?.parent_doc().is_some();
+    if is_subdoc {
+        return Err(Error::AlreadyIntegrated);
+    }
+    Ok(doc.0.clone())
+}
+
+/// `WrongDocument` if the transaction's document is a subdocument: yrs can't nest them (it panics).
+pub(crate) fn check_subdoc_parent(txn: &TransactionMut) -> Result<()> {
+    if yrs::ReadTxn::parent_doc(txn).is_some() {
+        Err(Error::WrongDocument)
+    } else {
+        Ok(())
+    }
 }

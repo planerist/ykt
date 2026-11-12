@@ -79,8 +79,8 @@ struct MapArrayTests {
         try map.set(key: "unheard", value: .null)
 
         #expect(events.all.map(\.keys) == [
-            ["new": .inserted(value: .string("y")), "kept": .updated(oldValue: .number(1), newValue: .number(10)), "gone": .removed(oldValue: .number(2))],
-            ["remote": .inserted(value: .bool(true))],
+            ["new": .inserted(value: .value(value: .string("y"))), "kept": .updated(oldValue: .value(value: .number(1)), newValue: .value(value: .number(10))), "gone": .removed(oldValue: .value(value: .number(2)))],
+            ["remote": .inserted(value: .value(value: .bool(true)))],
         ])
         #expect(events.all.map(\.originString) == ["editor", "server"])
     }
@@ -148,9 +148,9 @@ struct MapArrayTests {
         try array.push(values: [.null])
 
         #expect(events.all.map(\.delta) == [
-            [.insert([.number(1), .number(2), .number(3)])],
-            [.retain(1), .insert([.string("x")])],
-            [.delete(1), .retain(3), .insert([.bool(true)])],
+            [.insert([.value(value: .number(1)), .value(value: .number(2)), .value(value: .number(3))])],
+            [.retain(1), .insert([.value(value: .string("x"))])],
+            [.delete(1), .retain(3), .insert([.value(value: .bool(true))])],
         ])
         #expect(events.all.map(\.originString) == [nil, nil, "editor"])
         #expect(sub == nil)

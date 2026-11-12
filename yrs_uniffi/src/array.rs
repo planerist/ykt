@@ -1,31 +1,38 @@
-//! `YArray`: a shared list of values (Yjs's `Y.Array`). Values are `YValue`s; a shared type nested in
-//! an array (written by a client that has them, as Yjs) is read in its JSON form — nested shared
-//! types aren't in ykt's API yet.
+//! `YArray`: a shared list of values (Yjs's `Y.Array`). Values are plain (`YValue`) or shared types
+//! nested in the array — made with `insertText`, `insertMap`, `insertArray`, `insertDoc` and read
+//! back as handles with `getOutput`; `get` and `toJson` give a nested type in its JSON form.
 
-use crate::attrs::{into_yvalue, out_into_yvalue, YValue};
-use crate::collection::Integrated;
+use crate::attrs::{into_yvalue, out_into_yvalue, YAttributes, YValue};
+use crate::collection::{Integrated, SharedCollection, YBranchId};
+use crate::doc::YDoc;
+use crate::map::{array_prelim, map_prelim, subdoc_prelim, YMap};
 use crate::observers::{origin_bytes, subscription_key, ObserveResult, YSubscription};
+use crate::output::YOutput;
+use crate::text::YText;
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::{Change, ToJson};
-use yrs::{Any, Array, ArrayRef, Observable, TransactionMut};
+use yrs::{Any, Array, ArrayRef, Observable, TextPrelim, TransactionMut};
 
 /// A shared array (see the module docs). Indexes count values. Reads take a read-only transaction
-/// when none is given; writes, a transaction of their own.
+/// when none is given; writes, a transaction of their own. Two handles of the same array compare
+/// equal.
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 pub struct YArray(pub(crate) Integrated<ArrayRef>);
 
 // SAFETY: as YText: the embedding application calls into a document one call at a time.
 unsafe impl Send for YArray {}
 unsafe impl Sync for YArray {}
 
-/// One step of an array's change, as Yjs's `event.delta`.
-#[derive(uniffi::Enum, Clone, Debug, PartialEq)]
+/// One step of an array's change, as Yjs's `event.delta`. Inserted shared types come as handles.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq, Eq)]
+#[uniffi::export(Eq)]
 pub enum YArrayDelta {
     /// These values were inserted here.
-    Insert(Vec<YValue>),
+    Insert(Vec<YOutput>),
     /// This many values were deleted here.
     Delete(u32),
     /// This many values are unchanged.
@@ -59,6 +66,48 @@ impl YArray {
         })
     }
 
+    /// Inserts a new text with `text` in it at `index` (0 ..= `len()`, else `OutOfBounds`), and
+    /// returns it.
+    #[uniffi::method(default(text = None, txn = None))]
+    pub fn insert_text(&self, index: u32, text: Option<String>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YText>> {
+        self.0.mutably(txn, |array, txn| {
+            check_index(index, array.len(txn))?;
+            let nested = array.insert(txn, index, TextPrelim::new(text.unwrap_or_default()));
+            Ok(Arc::new(YText::new(SharedCollection::integrated(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Inserts a new map with `entries` in it at `index`, and returns it.
+    #[uniffi::method(default(entries = None, txn = None))]
+    pub fn insert_map(&self, index: u32, entries: Option<YAttributes>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YMap>> {
+        self.0.mutably(txn, |array, txn| {
+            check_index(index, array.len(txn))?;
+            let nested = array.insert(txn, index, map_prelim(entries));
+            Ok(Arc::new(YMap(Integrated::new(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Inserts a new array with `values` in it at `index`, and returns it.
+    #[uniffi::method(default(values = None, txn = None))]
+    pub fn insert_array(&self, index: u32, values: Option<Vec<YValue>>, txn: Option<Arc<YTransaction>>) -> Result<Arc<YArray>> {
+        self.0.mutably(txn, |array, txn| {
+            check_index(index, array.len(txn))?;
+            let nested = array.insert(txn, index, array_prelim(values));
+            Ok(Arc::new(YArray(Integrated::new(nested, self.0.doc.clone()))))
+        })
+    }
+
+    /// Inserts `doc` as a subdocument at `index` (as `YMap.setDoc`), and returns its handle.
+    #[uniffi::method(default(txn = None))]
+    pub fn insert_doc(&self, index: u32, doc: &YDoc, txn: Option<Arc<YTransaction>>) -> Result<Arc<YDoc>> {
+        let subdoc = subdoc_prelim(doc, &self.0.doc)?;
+        self.0.mutably(txn, |array, txn| {
+            check_index(index, array.len(txn))?;
+            crate::map::check_subdoc_parent(txn)?;
+            Ok(Arc::new(YDoc(array.insert(txn, index, subdoc))))
+        })
+    }
+
     /// Appends `values` at the end.
     #[uniffi::method(default(txn = None))]
     pub fn push(&self, values: Vec<YValue>, txn: Option<Arc<YTransaction>>) -> Result<()> {
@@ -84,11 +133,20 @@ impl YArray {
         })
     }
 
-    /// The value at `index` (`OutOfBounds` past the end).
+    /// The value at `index` (`OutOfBounds` past the end); a shared type in its JSON form
+    /// (`getOutput` gives its handle).
     #[uniffi::method(default(txn = None))]
     pub fn get(&self, index: u32, txn: Option<Arc<YTransaction>>) -> Result<YValue> {
         self.0.read(txn, |array, txn| {
             array.get(txn, index).map(|v| out_into_yvalue(&v, txn)).ok_or(Error::OutOfBounds)
+        })
+    }
+
+    /// The value at `index` as a plain value or a shared type's handle (`OutOfBounds` past the end).
+    #[uniffi::method(default(txn = None))]
+    pub fn get_output(&self, index: u32, txn: Option<Arc<YTransaction>>) -> Result<YOutput> {
+        self.0.read(txn, |array, txn| {
+            array.get(txn, index).map(|v| YOutput::from_out(v, &self.0.doc, txn)).ok_or(Error::OutOfBounds)
         })
     }
 
@@ -105,6 +163,11 @@ impl YArray {
             Any::Array(values) => Ok(values.iter().map(into_yvalue).collect()),
             _ => Ok(vec![]),
         })
+    }
+
+    /// The array's identity in its document, the same on every replica (see `YText.id`).
+    pub fn id(&self) -> YBranchId {
+        self.0.id().into()
     }
 
     /// Calls `observer` after every committed transaction that changed this array, with the change
@@ -132,11 +195,21 @@ impl YArray {
     }
 }
 
-fn array_delta(delta: &[Change], txn: &TransactionMut) -> Vec<YArrayDelta> {
+fn check_index(index: u32, len: u32) -> Result<()> {
+    if index > len {
+        Err(Error::OutOfBounds)
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn array_delta(delta: &[Change], txn: &TransactionMut) -> Vec<YArrayDelta> {
     delta
         .iter()
         .map(|change| match change {
-            Change::Added(values) => YArrayDelta::Insert(values.iter().map(|v| out_into_yvalue(v, txn)).collect()),
+            Change::Added(values) => {
+                YArrayDelta::Insert(values.iter().map(|v| YOutput::from_out(v.clone(), txn.doc(), txn)).collect())
+            }
             Change::Removed(len) => YArrayDelta::Delete(*len),
             Change::Retain(len) => YArrayDelta::Retain(*len),
         })

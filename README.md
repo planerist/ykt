@@ -262,25 +262,23 @@ that uses the document; one released while the document is locked can't detach f
 in memory with it (harmlessly).
 
 ## YMap and YArray
-`YDoc.getMap(name)` / `YDoc.getArray(name)` — Yjs's `Y.Map` and `Y.Array` of plain values (`YValue`:
-null, bool, number, bigint, string, buffer, and arrays and maps of them). Every call takes an
-optional transaction, as `YText`'s.
+`YDoc.getMap(name)` / `YDoc.getArray(name)` — Yjs's `Y.Map` and `Y.Array`, of plain values (`YValue`:
+null, bool, number, bigint, string, buffer, and arrays and maps of them) and of shared types nested in
+them. Every call takes an optional transaction, as `YText`'s.
 
 - `YMap`: `set(key, value)`, `get(key)` (null if absent), `delete(key)` (returns the old value),
   `containsKey`, `keys()` and `values()` (in no particular order, the same for both), `len()`,
-  `clear()`, `toJson()` (the whole map);
+  `clear()`, `toJson()` (the whole map), `id()`;
 - `YArray`: `insert(index, values)`, `push(values)`, `delete(index, length)`, `get(index)`, `len()`,
-  `toJson()` (the whole list); indexes past the end throw `OutOfBounds`;
+  `toJson()` (the whole list), `id()`; indexes past the end throw `OutOfBounds`;
 - `observe` — `YMapEvent(keys, origin)` with `YEntryChange` per key (`Inserted(value)`,
   `Updated(oldValue, newValue)`, `Removed(oldValue)`), `YArrayEvent(delta, origin)` with
   `YArrayDelta` steps (`Insert(values)`, `Delete(n)`, `Retain(n)`), once per committed transaction;
-  the same rules as the other observers.
+  the same rules as the other observers. Values in events are `YOutput` (below).
 
-Nested shared types (a `Y.Map` inside a `Y.Map`, a `Y.Text` in an array) aren't in ykt's API yet:
-values are plain, and a nested type another client (Yjs) wrote reads in its JSON form — a map's
-entries, an array's values, a text's string. `getMap` / `getArray` throw while the document is
-locked instead of waiting for it. Numbers travel in lib0's encoding, as Yjs's: an integer outside
-JS's safe range that a double holds exactly (2^60) reaches other replicas as a number, not a bigint.
+`getMap` / `getArray` throw while the document is locked instead of waiting for it. Numbers travel in
+lib0's encoding, as Yjs's: an integer outside JS's safe range that a double holds exactly (2^60)
+reaches other replicas as a number, not a bigint.
 
 ```kotlin
 val settings = doc.getMap("settings")
@@ -294,6 +292,37 @@ tags.push(listOf(YValue.String("work"), YValue.String("home")))
 let settings = try doc.getMap(name: "settings")
 try settings.set(key: "theme", value: .string("dark"))
 let sub = try doc.getArray(name: "tags").observe { event in render(event.delta) }
+```
+
+### Nested shared types
+A text, a map or an array inside a map or an array (Yjs's `map.set('k', new Y.Map())`), each with its
+own changes, history and observers:
+
+- making one gives its handle: `YMap.setText(key, text?)`, `setMap(key, entries?)`,
+  `setArray(key, values?)`, `setDoc(key, doc)` (a subdocument); `YArray.insertText(index, text?)`,
+  `insertMap`, `insertArray`, `insertDoc`; `YText.insertEmbedText / Map / Array(index, …, attributes?)`
+  (a shared type embedded in a text);
+- reading one: `YMap.getOutput(key)` / `YArray.getOutput(index)` give a `YOutput` — `Value(value)`
+  for a plain value, or a handle: `Text`, `Map`, `Array`, `XmlElement`, `XmlFragment`, `XmlText`,
+  `Doc` (helpers `asValue`, `asText`, `asMap`, `asArray`, `asDoc` in Swift and Kotlin). The plain
+  calls (`get`, `values`, `toJson`, text deltas) give a nested type in its JSON form, as before;
+- handles of the same type of the same document compare equal (`==`, hashable); `id()` is a type's
+  identity on every replica (`YBranchId.Nested(client, clock)`); a nested type its parent deleted or
+  replaced throws `TypeDeleted`;
+- undo: `YUndoManager.forMap(doc, map, options)` / `forArray(doc, array, options)`, and
+  `expandScopeMap` / `expandScopeArray`: the scope covers the types nested in them too.
+
+```kotlin
+val note = doc.getMap("note")
+val title = note.setText("title", "Untitled")              // a YText inside the map
+title.insert(8u, " 2")
+val meta = note.getOutput("meta")?.asMap                  // a nested map another client made
+```
+
+```swift
+let meta = try note.setMap(key: "meta", entries: ["pinned": .bool(true)])
+if case .text(let title)? = try note.getOutput(key: "title") { try title.insert(index: 0, chunk: "> ") }
+let undo = try YUndoManager.forMap(doc: doc, scope: note, options: YUndoOptions(trackedOrigins: ["editor"]))
 ```
 
 ## Errors
@@ -354,22 +383,23 @@ Source is inspired by y-crdt’s ywasm project.
     - [ ] YXmlFragment: tree_walker, observe/unobserve, observe_deep
     - [ ] YXmlEvent
     - [ ] YXmlText: quote, apply_delta, observe/unobserve, observe_deep
-  - [x] YMap (+ observe: key changes with old / new values) — plain values; nested shared types later
-  - [x] YArray (+ observe: delta) — plain values; nested shared types later
+  - [x] YMap (+ observe: key changes with old / new values), plain values and nested shared types
+  - [x] YArray (+ observe: delta), plain values and nested shared types
   - [ ] YWeakLink
 
 - Collaboration
   - [x] Relative positions (yrs `StickyIndex`, Yjs `RelativePosition`): a caret or a range that keeps its
     place through remote edits; encode/decode (in YText; YArray positions later)
-  - [x] YUndoManager (scope, tracked origins, capture timeout, stack item events with meta; texts in
-    the scope, YMap / YArray later)
+  - [x] YUndoManager (scope: texts, maps, arrays; tracked origins, capture timeout, stack item events
+    with meta)
   - [x] Update utilities without a document: merge_updates, diff_update,
     encode_state_vector_from_update (v1 and v2)
   - [ ] Awareness
 
 - Utilities & ergonomics
   - [x] Typed attributes (`YAttributes`) besides JSON strings for insert / format
-  - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
+  - [x] YOutput: plain values and handles of every shared type (maps, arrays, events); a text's
+    deltas still give embedded shared types in their JSON form
   - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
   - [x] `getText` / `getXmlFragment` throw while the document is locked (as `getMap` / `getArray`)
     instead of waiting for the lock — inside a transaction or a callback they blocked for good

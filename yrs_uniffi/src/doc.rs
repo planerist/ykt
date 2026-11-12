@@ -44,6 +44,7 @@ use yrs::{ArrayRef, MapRef, RootRef, TextRef, XmlFragmentRef};
 /// }
 /// ```
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 #[repr(transparent)]
 pub struct YDoc(pub(crate) Doc);
 

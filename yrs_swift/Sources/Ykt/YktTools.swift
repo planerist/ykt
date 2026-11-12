@@ -77,6 +77,19 @@ public extension YUndoManager {
     }
 }
 
+// MARK: - Nested shared types
+
+public extension YOutput {
+    /// The plain value; nil for a shared type.
+    var asValue: YValue? { if case .value(let value) = self { return value }; return nil }
+    /// The text; nil for anything else.
+    var asText: YText? { if case .text(let text) = self { return text }; return nil }
+    var asMap: YMap? { if case .map(let map) = self { return map }; return nil }
+    var asArray: YArray? { if case .array(let array) = self { return array }; return nil }
+    /// The subdocument; nil for anything else.
+    var asDoc: YDoc? { if case .doc(let doc) = self { return doc }; return nil }
+}
+
 public extension YTextEvent {
     /// The transaction's origin as text (`transaction(origin:)` takes a string).
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }

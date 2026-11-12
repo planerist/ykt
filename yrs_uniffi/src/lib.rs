@@ -26,11 +26,14 @@ mod xml_frag;
 mod xml_elem;
 mod xml_text;
 mod xml;
+mod output;
 #[cfg(test)]
 mod doc_tests;
 #[cfg(test)]
 mod error_tests;
 #[cfg(test)]
 mod attrs_tests;
+#[cfg(test)]
+mod nested_tests;
 
 uniffi::setup_scaffolding!();

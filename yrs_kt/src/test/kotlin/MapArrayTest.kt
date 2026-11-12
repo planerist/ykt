@@ -18,6 +18,7 @@ class MapArrayTest {
     private fun <T> synchronizedList(): MutableList<T> = Collections.synchronizedList(mutableListOf())
     private fun str(s: String) = YValue.String(s)
     private fun num(n: Double) = YValue.Number(n)
+    private fun out(v: YValue): YOutput = YOutput.Value(v)
 
     private val everyKind: List<Pair<String, YValue>> = listOf(
         "null" to YValue.Null,
@@ -94,11 +95,11 @@ class MapArrayTest {
         assertEquals(
             listOf(
                 mapOf(
-                    "new" to YEntryChange.Inserted(str("y")),
-                    "kept" to YEntryChange.Updated(num(1.0), num(10.0)),
-                    "gone" to YEntryChange.Removed(num(2.0)),
+                    "new" to YEntryChange.Inserted(out(str("y"))),
+                    "kept" to YEntryChange.Updated(out(num(1.0)), out(num(10.0))),
+                    "gone" to YEntryChange.Removed(out(num(2.0))),
                 ),
-                mapOf("remote" to YEntryChange.Inserted(YValue.Bool(true))),
+                mapOf("remote" to YEntryChange.Inserted(out(YValue.Bool(true)))),
             ),
             events.map { it.keys },
         )
@@ -173,9 +174,9 @@ class MapArrayTest {
 
         assertEquals(
             listOf(
-                listOf(YArrayDelta.Insert(listOf(num(1.0), num(2.0), num(3.0)))),
-                listOf(YArrayDelta.Retain(1u), YArrayDelta.Insert(listOf(str("x")))),
-                listOf(YArrayDelta.Delete(1u), YArrayDelta.Retain(3u), YArrayDelta.Insert(listOf(YValue.Bool(true)))),
+                listOf(YArrayDelta.Insert(listOf(num(1.0), num(2.0), num(3.0)).map(::out))),
+                listOf(YArrayDelta.Retain(1u), YArrayDelta.Insert(listOf(out(str("x"))))),
+                listOf(YArrayDelta.Delete(1u), YArrayDelta.Retain(3u), YArrayDelta.Insert(listOf(out(YValue.Bool(true))))),
             ),
             events.map { it.delta },
         )

@@ -13,6 +13,7 @@ use yrs::{Doc, GetString, TransactionMut, XmlFragment, XmlFragmentRef};
 /// nodeName and it does not have attributes. Though it can be bound to a DOM
 /// element - in this case the attributes and the nodeName are not shared
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 #[repr(transparent)]
 pub struct YXmlFragment(pub(crate) Arc<SharedCell<Vec<YXmlChild>, XmlFragmentRef>>);
 

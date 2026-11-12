@@ -23,6 +23,7 @@ pub(crate) struct PrelimXmlText {
 /// Rich text in an XML tree (Yjs's `Y.XmlText`): a text with formatting, embeds and XML
 /// attributes. Indexes count UTF-16 units, in a preliminary one too.
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 #[repr(transparent)]
 pub struct YXmlText(pub(crate) Arc<SharedCell<PrelimXmlText, XmlTextRef>>);
 

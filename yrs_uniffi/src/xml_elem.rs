@@ -30,6 +30,7 @@ pub(crate) struct PrelimXmElement {
 ///   using interleave-resistant algorithm, where order of concurrent inserts at the same index
 ///   is established using peer's document id seniority.
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 pub struct YXmlElement(pub(crate) Arc<SharedCell<PrelimXmElement, XmlElementRef>>);
 
 unsafe impl Sync for YXmlElement {}

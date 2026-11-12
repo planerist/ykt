@@ -1,5 +1,7 @@
 use crate::attrs::{from_yattrs, into_yattrs, out_into_yvalue, parse_attrs, YAttributes, YValue};
-use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, SharedCell, SharedCollection, YBranchId};
+use crate::array::YArray;
+use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, Integrated, SharedCell, SharedCollection, YBranchId};
+use crate::map::{array_prelim, map_prelim, YMap};
 use crate::delta::{y_into_delta, YDelta};
 use crate::observers::{origin_bytes, subscription_key, text_delta, ObserveResult, YSubscription, YTextEvent, YTextObserver};
 use crate::snapshots::YSnapshot;
@@ -12,7 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_TEXT;
 use yrs::types::Attrs;
-use yrs::{Any, GetString, Observable, Snapshot, Text, TextRef};
+use yrs::block::{EmbedPrelim, Prelim};
+use yrs::{Any, GetString, Observable, Snapshot, Text, TextPrelim, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -28,9 +31,10 @@ use yrs::{Any, GetString, Observable, Snapshot, Text, TextRef};
 /// after merging all updates together). In case of Yrs conflict resolution is solved by using
 /// unique document id to determine correct and consistent ordering.
 #[derive(uniffi::Object)]
+#[uniffi::export(Eq, Hash)]
 #[repr(transparent)]
 pub struct YText {
-    inner: Arc<SharedCell<String, TextRef>>,
+    pub(crate) inner: Arc<SharedCell<String, TextRef>>,
 }
 
 unsafe impl Sync for YText {}
@@ -75,6 +79,32 @@ impl YText {
             check_range(index, length, c.len(txn))?;
             c.format(txn, index, length, attrs);
             Ok(())
+        })
+    }
+
+    /// Embeds a new shared type at `index` and gives its handle.
+    fn embed_shared<P, R>(
+        &self,
+        index: u32,
+        prelim: P,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+        handle: impl FnOnce(P::Return, yrs::Doc) -> R,
+    ) -> Result<R>
+    where
+        P: Prelim + Into<EmbedPrelim<P>>,
+    {
+        let c = integrated_of(&self.inner)?;
+        let doc = c.doc.clone();
+        c.mutably(txn, |c, txn| {
+            if index > c.len(txn) {
+                return Err(Error::OutOfBounds);
+            }
+            let nested = match attributes {
+                Some(attrs) if !attrs.is_empty() => c.insert_embed_with_attributes(txn, index, prelim, from_yattrs(&attrs)),
+                _ => c.insert_embed(txn, index, prelim),
+            };
+            Ok(handle(nested, doc))
         })
     }
 
@@ -184,6 +214,46 @@ impl YText {
             }
             Ok(())
         })
+    }
+
+    /// Embeds a new text with `text` in it at `index`, with formatting `attributes` (Yjs's
+    /// `insertEmbed(index, new Y.Text())`), and returns it. Deltas give it in its JSON form;
+    /// `observeDeep` hears its changes.
+    #[uniffi::method(default(text=None, attributes=None, txn=None))]
+    pub fn insert_embed_text(
+        &self,
+        index: u32,
+        text: Option<String>,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<Arc<YText>> {
+        self.embed_shared(index, TextPrelim::new(text.unwrap_or_default()), attributes, txn, |text, doc| {
+            Arc::new(YText::new(SharedCollection::integrated(text, doc)))
+        })
+    }
+
+    /// Embeds a new map with `entries` at `index` (as `insertEmbedText`), and returns it.
+    #[uniffi::method(default(entries=None, attributes=None, txn=None))]
+    pub fn insert_embed_map(
+        &self,
+        index: u32,
+        entries: Option<YAttributes>,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<Arc<YMap>> {
+        self.embed_shared(index, map_prelim(entries), attributes, txn, |map, doc| Arc::new(YMap(Integrated::new(map, doc))))
+    }
+
+    /// Embeds a new array with `values` at `index` (as `insertEmbedText`), and returns it.
+    #[uniffi::method(default(values=None, attributes=None, txn=None))]
+    pub fn insert_embed_array(
+        &self,
+        index: u32,
+        values: Option<Vec<YValue>>,
+        attributes: Option<YAttributes>,
+        txn: Option<Arc<YTransaction>>,
+    ) -> Result<Arc<YArray>> {
+        self.embed_shared(index, array_prelim(values), attributes, txn, |array, doc| Arc::new(YArray(Integrated::new(array, doc))))
     }
 
     /// Formats `length` units from `index` on with `attributes`, a JSON object (a `null` value

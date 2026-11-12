@@ -20,12 +20,15 @@ use crate::attrs::YAttributes;
 use crate::collection::same_doc;
 use crate::doc::YDoc;
 use crate::observers::{subscription_key, ObserveResult, YSubscription};
+use crate::array::YArray;
+use crate::map::YMap;
 use crate::text::YText;
 use crate::tools::{Error, Result};
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, TryLockError};
 use yrs::undo::{EventKind, Options, UndoManager};
+use yrs::branch::Branch;
 use yrs::{Doc, Origin, Transact};
 
 /// Options of a `YUndoManager`.
@@ -100,36 +103,40 @@ impl YUndoManager {
     #[uniffi::constructor(default(options = None))]
     pub fn new(doc: &YDoc, scope: &YText, options: Option<YUndoOptions>) -> Result<Self> {
         let (text, text_doc) = scope.integrated_ref()?;
-        if !same_doc(&text_doc, doc.deref()) {
-            return Err(Error::WrongDocument);
-        }
-        // Registering with the document takes its lock, and yrs unwraps that: check it's free.
-        drop(doc.try_transact().map_err(|_| Error::Locked)?);
-        let mut opts: Options<YAttributes> = Options::default();
-        if let Some(o) = options {
-            opts.capture_timeout_millis = o.capture_timeout_millis;
-            for origin in o.tracked_origins {
-                opts.tracked_origins.insert(Origin::from(origin.as_str()));
-            }
-        }
-        let mut manager = UndoManager::with_options(opts);
-        manager.expand_scope(doc.deref(), &text);
-        let origin = manager.as_origin().as_ref().to_vec();
-        Ok(YUndoManager {
-            manager: Mutex::new(Some(manager)),
-            doc: doc.deref().clone(),
-            origin,
-            in_callback: Arc::new(AtomicUsize::new(0)),
-        })
+        Self::with_scope(doc, &text, &text_doc, options)
+    }
+
+    /// A manager of the changes to `scope`, a map of `doc` (nested types in it included), as `new`.
+    #[uniffi::constructor(default(options = None))]
+    pub fn for_map(doc: &YDoc, scope: &YMap, options: Option<YUndoOptions>) -> Result<Self> {
+        let map = scope.0.read(None, |map, _| Ok(map.clone()))?;
+        Self::with_scope(doc, &map, &scope.0.doc, options)
+    }
+
+    /// A manager of the changes to `scope`, an array of `doc` (nested types in it included), as
+    /// `new`.
+    #[uniffi::constructor(default(options = None))]
+    pub fn for_array(doc: &YDoc, scope: &YArray, options: Option<YUndoOptions>) -> Result<Self> {
+        let array = scope.0.read(None, |array, _| Ok(array.clone()))?;
+        Self::with_scope(doc, &array, &scope.0.doc, options)
     }
 
     /// Adds a text of the same document to the scope.
     pub fn expand_scope(&self, text: &YText) -> Result<()> {
         let (text, text_doc) = text.integrated_ref()?;
-        if !same_doc(&text_doc, &self.doc) {
-            return Err(Error::WrongDocument);
-        }
-        self.with(|m| m.expand_scope(&text_doc, &text))
+        self.expand(&text, &text_doc)
+    }
+
+    /// Adds a map of the same document (nested types in it included) to the scope.
+    pub fn expand_scope_map(&self, map: &YMap) -> Result<()> {
+        let shared = map.0.read(None, |map, _| Ok(map.clone()))?;
+        self.expand(&shared, &map.0.doc)
+    }
+
+    /// Adds an array of the same document (nested types in it included) to the scope.
+    pub fn expand_scope_array(&self, array: &YArray) -> Result<()> {
+        let shared = array.0.read(None, |array, _| Ok(array.clone()))?;
+        self.expand(&shared, &array.0.doc)
     }
 
     /// Reverts the last undo stack item and moves it to the redo stack. Returns whether anything
@@ -219,6 +226,37 @@ impl YUndoManager {
 type Manager = UndoManager<YAttributes>;
 
 impl YUndoManager {
+    fn with_scope<T: AsRef<Branch>>(doc: &YDoc, scope: &T, scope_doc: &Doc, options: Option<YUndoOptions>) -> Result<Self> {
+        if !same_doc(scope_doc, doc.deref()) {
+            return Err(Error::WrongDocument);
+        }
+        // Registering with the document takes its lock, and yrs unwraps that: check it's free.
+        drop(doc.try_transact().map_err(|_| Error::Locked)?);
+        let mut opts: Options<YAttributes> = Options::default();
+        if let Some(o) = options {
+            opts.capture_timeout_millis = o.capture_timeout_millis;
+            for origin in o.tracked_origins {
+                opts.tracked_origins.insert(Origin::from(origin.as_str()));
+            }
+        }
+        let mut manager = UndoManager::with_options(opts);
+        manager.expand_scope(doc.deref(), scope);
+        let origin = manager.as_origin().as_ref().to_vec();
+        Ok(YUndoManager {
+            manager: Mutex::new(Some(manager)),
+            doc: doc.deref().clone(),
+            origin,
+            in_callback: Arc::new(AtomicUsize::new(0)),
+        })
+    }
+
+    fn expand<T: AsRef<Branch>>(&self, scope: &T, scope_doc: &Doc) -> Result<()> {
+        if !same_doc(scope_doc, &self.doc) {
+            return Err(Error::WrongDocument);
+        }
+        self.with(|m| m.expand_scope(scope_doc, scope))
+    }
+
     /// Runs `f` on the manager; fails while it is busy (inside its callbacks, or another call).
     fn with<R>(&self, f: impl FnOnce(&mut Manager) -> R) -> Result<R> {
         if self.in_callback.load(Ordering::SeqCst) > 0 {

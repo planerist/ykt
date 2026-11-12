@@ -28,5 +28,7 @@ mod xml_text;
 mod xml;
 #[cfg(test)]
 mod doc_tests;
+#[cfg(test)]
+mod error_tests;
 
 uniffi::setup_scaffolding!();

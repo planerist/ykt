@@ -163,9 +163,9 @@ struct UndoManagerTests {
         try insert(doc, text, "editor", 0, "a")
 
         try doc.transact(origin: "editor") { (_: YTransaction) throws in
-            #expect(throws: YError.AnotherTx) { try undo.undo() }
-            #expect(throws: YError.AnotherTx) { try undo.redo() }
-            #expect(throws: YError.AnotherTx) { try undo.clear() }
+            expectYError(YError.Locked) { try undo.undo() }
+            expectYError(YError.Locked) { try undo.redo() }
+            expectYError(YError.Locked) { try undo.clear() }
             #expect(try undo.canUndo())
         }
 

@@ -8,7 +8,7 @@ struct YDocTests {
         let text = try d1.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
 
-        let prev = snapshot(doc: d1)
+        let prev = try snapshot(doc: d1)
         try text.insert(index: 5, chunk: " world")
 
         let state = try encodeStateFromSnapshotV2(doc: d1, snapshot: prev)
@@ -39,9 +39,9 @@ struct YDocTests {
         let doc = YDoc()
         let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
-        let prev = snapshot(doc: doc)
+        let prev = try snapshot(doc: doc)
         try text.insert(index: 5, chunk: " world")
-        let next = snapshot(doc: doc)
+        let next = try snapshot(doc: doc)
 
         let delta = try text.toDelta(snapshot: next, prevSnapshot: prev)
         #expect(delta == [
@@ -54,9 +54,9 @@ struct YDocTests {
         let doc = YDoc()
         let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
-        let prev = snapshot(doc: doc)
+        let prev = try snapshot(doc: doc)
         try text.insert(index: 5, chunk: " world", attributes: "{\"bold\":true}")
-        let next = snapshot(doc: doc)
+        let next = try snapshot(doc: doc)
 
         let delta = try text.toDelta(snapshot: next, prevSnapshot: prev)
         #expect(delta == [
@@ -148,10 +148,11 @@ struct YDocTests {
         let text = try doc.getText(name: "text")
         try text.insert(index: 0, chunk: "hello")
 
-        #expect(throws: (any Error).self) { try text.delete(index: 4, length: 3) }
-        #expect(try text.toText() == "hell")
+        // Past the end: nothing is deleted (yrs used to delete what there was, then panic).
+        expectYError(YError.OutOfBounds) { try text.delete(index: 4, length: 3) }
+        #expect(try text.toText() == "hello")
 
         try text.insert(index: 5, chunk: " world")
-        #expect(try text.toText() == "hell world")
+        #expect(try text.toText() == "hello world")
     }
 }

@@ -187,10 +187,11 @@ class YDocTest {
         val text = doc.getText("text")
         text.insert(0u, "hello")
 
-        assertThrows<InternalException> { text.delete(4u, 3u) }
-        assertEquals("hell", text.toText())
+        // Past the end: nothing is deleted (yrs used to delete what there was, then panic).
+        assertThrows<YException.OutOfBounds> { text.delete(4u, 3u) }
+        assertEquals("hello", text.toText())
 
         text.insert(5u, " world")
-        assertEquals("hell world", text.toText())
+        assertEquals("hello world", text.toText())
     }
 }

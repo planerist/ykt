@@ -1,12 +1,11 @@
-use crate::tools;
 use crate::tools::Error;
 use crate::tools::Result;
+use crate::updates::decoding;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use yrs::error::UpdateError;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{ReadTxn, StateVector, TransactionMut, Update};
@@ -17,7 +16,6 @@ pub struct YTransactionInner {
     // and that any given YTransaction is only used from one thread at a time (although the
     // thread may change between calls). Misuse outside those guarantees can cause UB.
     pub inner: ManuallyDrop<TransactionMut<'static>>,
-    // pub cached_before_state: Option<PyObject>,
     pub committed: bool,
 }
 
@@ -44,7 +42,7 @@ impl DerefMut for YTransactionInner {
 impl Drop for YTransactionInner {
     fn drop(&mut self) {
         if !self.committed {
-            self.commit();
+            let _ = self.commit();
         }
     }
 }
@@ -53,29 +51,11 @@ impl YTransactionInner {
     pub fn new(txn: TransactionMut<'static>) -> Self {
         YTransactionInner {
             inner: ManuallyDrop::new(txn),
-            // cached_before_state: None,
             committed: false,
         }
     }
-}
 
-impl YTransactionInner {
-    // pub fn before_state(&mut self) -> PyObject {
-    //     if self.cached_before_state.is_none() {
-    //         let before_state = Python::with_gil(|py| {
-    //             let txn = (*self).deref();
-    //             let state_map: HashMap<u64, u32> =
-    //                 txn.before_state().iter().map(|(x, y)| (x.get(), *y)).collect();
-    //             state_map.into_py(py)
-    //         });
-    //         self.cached_before_state = Some(before_state);
-    //     }
-    //     return self.cached_before_state.as_ref().unwrap().clone();
-    // }
-
-    /// Triggers a post-update series of operations without `free`ing the transaction. This includes
-    /// compaction and optimization of internal representation of updates, triggering events etc.
-    /// Ypy transactions are auto-committed when they are `free`d.
+    /// Commits the transaction (its observers run now) and releases the document's lock.
     pub fn commit(&mut self) -> Result<()> {
         if !self.committed {
             self.deref_mut().commit();
@@ -84,11 +64,15 @@ impl YTransactionInner {
 
             Ok(())
         } else {
-            Err(Error::TxnCommitted)
+            Err(Error::TransactionCommitted)
         }
     }
 }
 
+/// A read-write transaction of a document (`YDoc.transaction(origin)`): every change made in it
+/// reaches the observers at once, as one event, when it commits — `commit()`, or when it is
+/// released. Every method throws `TransactionCommitted` after the commit, and `Locked` while the
+/// transaction is committing (inside its own observers' callbacks).
 #[derive(uniffi::Object)]
 pub struct YTransaction {
     inner: Arc<RefCell<YTransactionInner>>,
@@ -103,245 +87,107 @@ unsafe impl Sync for YTransaction {}
 unsafe impl Send for YTransaction {}
 
 impl YTransaction {
-    pub fn get_inner(&self) -> Arc<RefCell<YTransactionInner>> {
-        self.inner.clone()
+    /// Runs `f` with the open transaction: `TransactionCommitted` after the commit, `Locked` while
+    /// it is in use (committing: inside its callbacks).
+    pub(crate) fn read<R>(&self, f: impl FnOnce(&TransactionMut<'static>) -> Result<R>) -> Result<R> {
+        let inner = self.inner.try_borrow().map_err(|_| Error::Locked)?;
+        if inner.committed {
+            return Err(Error::TransactionCommitted);
+        }
+        f(&inner)
     }
 
-    fn try_apply(&self, update: Update) -> Result<()> {
-        self.get_inner()
-            .borrow_mut()
-            .apply_update(update)
-            .map_err(|e| match e {
-                UpdateError::InvalidParent(_, _) => tools::Error::InvalidParent,
-            })
+    /// As `read`, to write in the transaction.
+    pub(crate) fn write<R>(&self, f: impl FnOnce(&mut TransactionMut<'static>) -> Result<R>) -> Result<R> {
+        let mut inner = self.inner.try_borrow_mut().map_err(|_| Error::Locked)?;
+        if inner.committed {
+            return Err(Error::TransactionCommitted);
+        }
+        f(&mut inner)
+    }
+
+    fn apply(&self, update: Update) -> Result<()> {
+        self.write(|txn| txn.apply_update(update).map_err(|e| Error::InvalidData(e.to_string())))
     }
 }
 
 #[uniffi::export]
 impl YTransaction {
-    /// Returns state vector describing the state of the document
-    /// at the moment when the transaction began.
-    pub fn before_state(&self) -> HashMap<u64, u32> {
-        self.get_inner()
-            .borrow()
-            .before_state()
-            .iter()
-            .map(|(x, y)| (x.get(), *y))
-            .collect()
+    /// The document's state vector (client id → clock) when the transaction began.
+    pub fn before_state(&self) -> Result<HashMap<u64, u32>> {
+        self.read(|txn| Ok(txn.before_state().iter().map(|(x, y)| (x.get(), *y)).collect()))
     }
 
-    /// Returns state vector describing the current state of
-    /// the document.
-    pub fn after_state(&self) -> HashMap<u64, u32> {
-        let state_map: HashMap<u64, u32> = self
-            .get_inner()
-            .borrow()
-            .after_state()
-            .iter()
-            .map(|(x, y)| (x.get(), *y))
-            .collect();
-
-        state_map
+    /// The document's state vector now, with the transaction's changes so far.
+    pub fn after_state(&self) -> Result<HashMap<u64, u32>> {
+        self.read(|txn| Ok(txn.after_state().iter().map(|(x, y)| (x.get(), *y)).collect()))
     }
 
-    pub fn origin(&self) -> Option<Vec<u8>> {
-        let inner = self.get_inner();
-        let inner = inner.borrow();
-        let origin = inner.origin()?;
-        Some(origin.as_ref().to_vec())
+    /// The origin the transaction was opened with (`YDoc.transaction(origin)`), as bytes.
+    pub fn origin(&self) -> Result<Option<Vec<u8>>> {
+        self.read(|txn| Ok(txn.origin().map(|origin| origin.as_ref().to_vec())))
     }
 
-    /// Triggers a post-update series of operations without `free`ing the transaction. This includes
-    /// compaction and optimization of internal representation of updates, triggering events etc.
-    /// ywasm transactions are auto-committed when they are `free`d.
+    /// Commits the transaction: its changes reach the observers now, and the document is unlocked.
+    /// Throws `TransactionCommitted` the second time.
     #[uniffi::method]
     pub fn commit(&self) -> Result<()> {
-        self.get_inner().borrow_mut().commit()?;
-        Ok(())
+        self.inner.try_borrow_mut().map_err(|_| Error::Locked)?.commit()
     }
 
-    /// Encodes a state vector of a given transaction document into its binary representation using
-    /// lib0 v1 encoding. State vector is a compact representation of updates performed on a given
-    /// document and can be used by `encode_state_as_update` on remote peer to generate a delta
-    /// update payload to synchronize changes between peers.
-    ///
-    /// Example:
-    ///
-    /// ```javascript
-    /// import YDoc from 'ywasm'
-    ///
-    /// /// document on machine A
-    /// const localDoc = new YDoc()
-    /// const localTxn = localDoc.beginTransaction()
-    ///
-    /// // document on machine B
-    /// const remoteDoc = new YDoc()
-    /// const remoteTxn = localDoc.beginTransaction()
-    ///
-    /// try {
-    ///     const localSV = localTxn.stateVectorV1()
-    ///     const remoteDelta = remoteTxn.diffV1(localSv)
-    ///     localTxn.applyV1(remoteDelta)
-    /// } finally {
-    ///     localTxn.free()
-    ///     remoteTxn.free()
-    /// }
-    /// ```
-    pub fn state_vector_v1(&self) -> Vec<u8> {
-        let sv = self.get_inner().borrow().state_vector();
-        sv.encode_v1()
+    /// The document's state vector (lib0 v1): what a replica sends to ask for what it lacks
+    /// (`diffV1` / `diffV2` on the other side).
+    pub fn state_vector_v1(&self) -> Result<Vec<u8>> {
+        self.read(|txn| Ok(txn.state_vector().encode_v1()))
     }
 
-    pub fn state_vector_v2(&self) -> Vec<u8> {
-        let sv = self.get_inner().borrow().state_vector();
-        sv.encode_v2()
+    /// The document's state vector in lib0 v2 encoding.
+    pub fn state_vector_v2(&self) -> Result<Vec<u8>> {
+        self.read(|txn| Ok(txn.state_vector().encode_v2()))
     }
 
-    /// Encodes all updates that have happened since a given version `vector` into a compact delta
-    /// representation using lib0 v1 encoding. If `vector` parameter has not been provided, generated
-    /// delta payload will contain all changes of a current ywasm document, working effectively as
-    /// its state snapshot.
-    ///
-    /// Example:
-    ///
-    /// ```javascript
-    /// import YDoc from 'ywasm'
-    ///
-    /// /// document on machine A
-    /// const localDoc = new YDoc()
-    /// const localTxn = localDoc.beginTransaction()
-    ///
-    /// // document on machine B
-    /// const remoteDoc = new YDoc()
-    /// const remoteTxn = localDoc.beginTransaction()
-    ///
-    /// try {
-    ///     const localSV = localTxn.stateVectorV1()
-    ///     const remoteDelta = remoteTxn.diffV1(localSv)
-    ///     localTxn.applyV1(remoteDelta)
-    /// } finally {
-    ///     localTxn.free()
-    ///     remoteTxn.free()
-    /// }
-    /// ```
+    /// What a replica with state `vector` (lib0 v1) lacks, as an update in lib0 v1 encoding.
+    /// Malformed bytes throw `InvalidData`.
     pub fn diff_v1(&self, vector: Vec<u8>) -> Result<Vec<u8>> {
-        match StateVector::decode_v1(vector.to_vec().as_slice()) {
-            Ok(sv) => Ok(self.get_inner().borrow().encode_diff_v1(&sv)),
-            Err(e) => Err(tools::Error::InvalidData(e.to_string())),
-        }
+        let sv = decoding(|| StateVector::decode_v1(&vector))?;
+        self.read(|txn| Ok(txn.encode_diff_v1(&sv)))
     }
 
-    /// Encodes all updates that have happened since a given version `vector` into a compact delta
-    /// representation using lib0 v1 encoding. If `vector` parameter has not been provided, generated
-    /// delta payload will contain all changes of a current ywasm document, working effectively as
-    /// its state snapshot.
-    ///
-    /// Example:
-    ///
-    /// ```javascript
-    /// import YDoc from 'ywasm'
-    ///
-    /// /// document on machine A
-    /// const localDoc = new YDoc()
-    /// const localTxn = localDoc.beginTransaction()
-    ///
-    /// // document on machine B
-    /// const remoteDoc = new YDoc()
-    /// const remoteTxn = localDoc.beginTransaction()
-    ///
-    /// try {
-    ///     const localSV = localTxn.stateVectorV1()
-    ///     const remoteDelta = remoteTxn.diffV2(localSv)
-    ///     localTxn.applyV2(remoteDelta)
-    /// } finally {
-    ///     localTxn.free()
-    ///     remoteTxn.free()
-    /// }
-    /// ```
+    /// As `diff_v1`, the update in lib0 v2 encoding (the state vector is lib0 v1).
     pub fn diff_v2(&self, vector: Vec<u8>) -> Result<Vec<u8>> {
-        match StateVector::decode_v1(vector.to_vec().as_slice()) {
-            Ok(sv) => Ok(self.get_inner().borrow().encode_diff_v2(&sv)),
-            Err(e) => Err(tools::Error::InvalidData(e.to_string())),
-        }
+        let sv = decoding(|| StateVector::decode_v1(&vector))?;
+        self.read(|txn| Ok(txn.encode_diff_v2(&sv)))
     }
 
-    /// Applies delta update generated by the remote document replica to a current transaction's
-    /// document. This method assumes that a payload maintains lib0 v1 encoding format.
-    ///
-    /// Example:
-    ///
-    /// ```javascript
-    /// import YDoc from 'ywasm'
-    ///
-    /// /// document on machine A
-    /// const localDoc = new YDoc()
-    /// const localTxn = localDoc.beginTransaction()
-    ///
-    /// // document on machine B
-    /// const remoteDoc = new YDoc()
-    /// const remoteTxn = localDoc.beginTransaction()
-    ///
-    /// try {
-    ///     const localSV = localTxn.stateVectorV1()
-    ///     const remoteDelta = remoteTxn.diffV1(localSv)
-    ///     localTxn.applyV1(remoteDelta)
-    /// } finally {
-    ///     localTxn.free()
-    ///     remoteTxn.free()
-    /// }
-    /// ```
+    /// Applies a replica's update (lib0 v1) in this transaction. Malformed bytes throw
+    /// `InvalidData`.
     pub fn apply_v1(&self, diff: Vec<u8>) -> Result<()> {
-        match Update::decode_v1(diff.as_slice()) {
-            Ok(update) => self.try_apply(update),
-            Err(e) => Err(tools::Error::InvalidData(e.to_string())),
-        }
+        self.apply(decoding(|| Update::decode_v1(&diff))?)
     }
 
-    /// Applies delta update generated by the remote document replica to a current transaction's
-    /// document. This method assumes that a payload maintains lib0 v2 encoding format.
-    ///
-    /// Example:
-    ///
-    /// ```javascript
-    /// import YDoc from 'ywasm'
-    ///
-    /// /// document on machine A
-    /// const localDoc = new YDoc()
-    /// const localTxn = localDoc.beginTransaction()
-    ///
-    /// // document on machine B
-    /// const remoteDoc = new YDoc()
-    /// const remoteTxn = localDoc.beginTransaction()
-    ///
-    /// try {
-    ///     const localSV = localTxn.stateVectorV1()
-    ///     const remoteDelta = remoteTxn.diffV2(localSv)
-    ///     localTxn.applyV2(remoteDelta)
-    /// } finally {
-    ///     localTxn.free()
-    ///     remoteTxn.free()
-    /// }
-    /// ```
+    /// Applies a replica's update (lib0 v2) in this transaction. Malformed bytes throw
+    /// `InvalidData`.
     pub fn apply_v2(&self, diff: Vec<u8>) -> Result<()> {
-        match Update::decode_v2(diff.as_slice()) {
-            Ok(update) => self.try_apply(update),
-            Err(e) => Err(tools::Error::InvalidData(e.to_string())),
-        }
+        self.apply(decoding(|| Update::decode_v2(&diff))?)
     }
 
-    pub fn encode_update(&self) -> Vec<u8> {
-        self.get_inner().borrow().encode_update_v1()
+    /// The transaction's changes so far as an update (lib0 v1).
+    pub fn encode_update(&self) -> Result<Vec<u8>> {
+        self.read(|txn| Ok(txn.encode_update_v1()))
     }
 
-    pub fn encode_update_v2(&self) -> Vec<u8> {
-        self.get_inner().borrow().encode_update_v2()
+    /// The transaction's changes so far as an update (lib0 v2).
+    pub fn encode_update_v2(&self) -> Result<Vec<u8>> {
+        self.read(|txn| Ok(txn.encode_update_v2()))
     }
 
     /// Force garbage collection of the deleted elements, regardless of a parent doc was created
     /// with `gc` option turned on or off.
     pub fn gc(&self) -> Result<()> {
-        self.get_inner().borrow_mut().gc(None);
-        Ok(())
+        self.write(|txn| {
+            txn.gc(None);
+            Ok(())
+        })
     }
 }
 

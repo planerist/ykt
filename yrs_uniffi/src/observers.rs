@@ -11,7 +11,7 @@
 //!
 //! Callbacks run synchronously, on the thread that commits the transaction, while the document is
 //! still locked by it: a callback must not read or write the same document (that fails with
-//! `AnotherTx` / `AnotherRwTx`); it gets everything it needs in the event, and can defer more work.
+//! `Locked`); it gets everything it needs in the event, and can defer more work.
 //!
 //! Each subscription is a [YSubscription]: `unsubscribe()` stops it, and so does releasing it (the
 //! host's GC / ARC, Kotlin's `close()`). Unsubscribing is safe anywhere, inside a callback too: the

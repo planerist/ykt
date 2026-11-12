@@ -100,9 +100,9 @@ struct MapArrayTests {
         try array.delete(index: 1, length: 2)
         #expect(try array.toJson() == [.string("first"), .string("last")])
 
-        #expect(throws: YError.OutOfBounds) { try array.insert(index: 3, values: [.null]) }
-        #expect(throws: YError.OutOfBounds) { try array.delete(index: 1, length: 2) }
-        #expect(throws: YError.OutOfBounds) { try array.get(index: 2) }
+        expectYError(YError.OutOfBounds) { try array.insert(index: 3, values: [.null]) }
+        expectYError(YError.OutOfBounds) { try array.delete(index: 1, length: 2) }
+        expectYError(YError.OutOfBounds) { try array.get(index: 2) }
         #expect(try array.len() == 2)
     }
 
@@ -167,8 +167,8 @@ struct MapArrayTests {
             try array.push(values: [.number(1)], txn: txn)
             #expect(try map.get(key: "k", txn: txn) == .number(1))
             #expect(try array.len(txn: txn) == 1)
-            #expect(throws: YError.AnotherRwTx) { try map.get(key: "k") }
-            #expect(throws: YError.AnotherTx) { try doc.getMap(name: "m") }
+            expectYError(YError.Locked) { try map.get(key: "k") }
+            expectYError(YError.Locked) { try doc.getMap(name: "m") }
         }
 
         let results = Box<Bool>()

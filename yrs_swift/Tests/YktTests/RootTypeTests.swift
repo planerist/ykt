@@ -28,7 +28,7 @@ struct RootTypeTests {
             do {
                 try body()
                 results.append("\(name) works")
-            } catch YError.AnotherTx {
+            } catch YError.Locked {
                 results.append("\(name) throws")
             } catch {
                 results.append("\(name): \(error)")

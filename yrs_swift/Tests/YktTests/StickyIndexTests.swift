@@ -59,7 +59,7 @@ struct StickyIndexTests {
         #expect(try start.offset(doc: doc)?.index == 0)
         #expect(try end.offset(doc: doc)?.index == 6)
         #expect(try beforeC.offset(doc: doc)?.index == 4)
-        #expect(throws: YError.OutOfBounds) { try text.stickyIndex(index: 7, assoc: .after) }
+        expectYError(YError.OutOfBounds) { try text.stickyIndex(index: 7, assoc: .after) }
     }
 
     @Test func utf16Offsets() throws {
@@ -92,7 +92,7 @@ struct StickyIndexTests {
             #expect(throws: YError.self) { try YStickyIndex.decode(bytes: bytes) }
         }
         let prelim = YText.newWithText(init: "abc")
-        #expect(throws: YError.InvalidPrelimOp) { try prelim.stickyIndex(index: 0, assoc: .after) }
+        expectYError(YError.NotIntegrated) { try prelim.stickyIndex(index: 0, assoc: .after) }
     }
 
     @Test func insideATransaction() throws {
@@ -104,7 +104,7 @@ struct StickyIndexTests {
             try text.insert(index: 0, chunk: "XY", txn: txn)
             #expect(try c.offset(doc: doc, txn: txn)?.index == 4)
             #expect(try text.stickyIndex(index: 2, assoc: .after, txn: txn).offset(doc: doc, txn: txn)?.index == 2)
-            #expect(throws: YError.AnotherRwTx) { try c.offset(doc: doc) }
+            expectYError(YError.Locked) { try c.offset(doc: doc) }
         }
         #expect(try c.offset(doc: doc)?.index == 4)
     }

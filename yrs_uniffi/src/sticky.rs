@@ -111,19 +111,14 @@ impl YStickyIndex {
     #[uniffi::method(default(txn = None))]
     pub fn offset(&self, doc: &YDoc, txn: Option<Arc<YTransaction>>) -> Result<Option<YStickyOffset>> {
         let offset = match txn {
-            Some(txn) => {
-                let inner = txn.get_inner();
-                let txn = inner.borrow();
-                if txn.committed {
-                    return Err(Error::TxnCommitted);
-                }
+            Some(txn) => txn.read(|txn| {
                 if !same_doc(txn.doc(), doc.deref()) {
-                    return Err(Error::Custom("the transaction belongs to another document".into()));
+                    return Err(Error::WrongDocument);
                 }
-                self.0.get_offset(&ReadView(yrs::ReadTxn::store(txn.deref())))
-            }
+                Ok(self.0.get_offset(&ReadView(yrs::ReadTxn::store(txn))))
+            })?,
             None => {
-                let txn = doc.try_transact().map_err(|_| Error::AnotherRwTx)?;
+                let txn = doc.try_transact().map_err(|_| Error::Locked)?;
                 self.0.get_offset(&ReadView(yrs::ReadTxn::store(&txn)))
             }
         };

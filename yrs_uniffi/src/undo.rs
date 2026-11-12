@@ -12,7 +12,7 @@
 //!
 //! The manager follows the document's rules: one call at a time; its callbacks run on the
 //! committing thread with the document locked, and inside them neither the manager nor the document
-//! may be used (that throws `AnotherTx`). `undo()`, `redo()` and `clear()` need the document
+//! may be used (that throws `Locked`). `undo()`, `redo()` and `clear()` need the document
 //! unlocked: inside a transaction or a callback they throw instead of waiting for a lock that
 //! can't come.
 
@@ -101,10 +101,10 @@ impl YUndoManager {
     pub fn new(doc: &YDoc, scope: &YText, options: Option<YUndoOptions>) -> Result<Self> {
         let (text, text_doc) = scope.integrated_ref()?;
         if !same_doc(&text_doc, doc.deref()) {
-            return Err(Error::Custom("the text belongs to another document".into()));
+            return Err(Error::WrongDocument);
         }
         // Registering with the document takes its lock, and yrs unwraps that: check it's free.
-        drop(doc.try_transact().map_err(|_| Error::AnotherTx)?);
+        drop(doc.try_transact().map_err(|_| Error::Locked)?);
         let mut opts: Options<YAttributes> = Options::default();
         if let Some(o) = options {
             opts.capture_timeout_millis = o.capture_timeout_millis;
@@ -127,7 +127,7 @@ impl YUndoManager {
     pub fn expand_scope(&self, text: &YText) -> Result<()> {
         let (text, text_doc) = text.integrated_ref()?;
         if !same_doc(&text_doc, &self.doc) {
-            return Err(Error::Custom("the text belongs to another document".into()));
+            return Err(Error::WrongDocument);
         }
         self.with(|m| m.expand_scope(&text_doc, &text))
     }
@@ -222,21 +222,21 @@ impl YUndoManager {
     /// Runs `f` on the manager; fails while it is busy (inside its callbacks, or another call).
     fn with<R>(&self, f: impl FnOnce(&mut Manager) -> R) -> Result<R> {
         if self.in_callback.load(Ordering::SeqCst) > 0 {
-            return Err(Error::AnotherTx);
+            return Err(Error::Locked);
         }
         let mut guard = match self.manager.try_lock() {
             Ok(guard) => guard,
             Err(TryLockError::Poisoned(e)) => e.into_inner(),
-            Err(TryLockError::WouldBlock) => return Err(Error::AnotherTx),
+            Err(TryLockError::WouldBlock) => return Err(Error::Locked),
         };
-        let manager = guard.as_mut().ok_or(Error::RefDisposed)?;
+        let manager = guard.as_mut().ok_or(Error::Locked)?;
         Ok(f(manager))
     }
 
     /// As `with`, for what takes the document's lock (yrs then waits for it, forever if this thread
     /// holds it): fails at once while the document is locked.
     fn with_unlocked_doc<R>(&self, f: impl FnOnce(&mut Manager) -> R) -> Result<R> {
-        drop(self.doc.try_transact().map_err(|_| Error::AnotherTx)?);
+        drop(self.doc.try_transact().map_err(|_| Error::Locked)?);
         self.with(f)
     }
 

@@ -1,19 +1,17 @@
-use crate::attrs::{into_yattrs, into_yvalue, parse_attrs};
-use crate::collection::SharedCollection;
-use crate::delta::YDelta::YInsert;
+use crate::attrs::{into_yattrs, out_into_yvalue, parse_attrs, YValue};
+use crate::collection::{integrated_of, is_alive, is_prelim, with_cell, SharedCell, SharedCollection};
 use crate::delta::{y_into_delta, YDelta};
+use crate::observers::{origin_bytes, subscription_key, text_delta, ObserveResult, YSubscription, YTextEvent, YTextObserver};
 use crate::snapshots::YSnapshot;
 use crate::sticky::{YAssoc, YStickyIndex};
-use crate::tools::Error;
-use crate::tools::Result;
+use crate::tools::{check_range, utf16_len, utf16_offset, Error, Result};
 use crate::transaction::YTransaction;
-use crate::observers::{origin_bytes, subscription_key, text_delta, ObserveResult, YSubscription, YTextEvent, YTextObserver};
 use std::cell::RefCell;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use yrs::types::TYPE_REFS_TEXT;
-use yrs::{GetString, Observable, Out, Snapshot, Text, TextRef};
+use yrs::{GetString, Observable, Snapshot, Text, TextRef};
 
 /// A shared data type used for collaborative text editing. It enables multiple users to add and
 /// remove chunks of text in efficient manner. This type is internally represented as a mutable
@@ -21,8 +19,8 @@ use yrs::{GetString, Observable, Out, Snapshot, Text, TextRef};
 /// allows to squash multiple consecutively inserted characters together as a single chunk of text
 /// even between transaction boundaries in order to preserve more efficient memory model.
 ///
-/// `YText` structure internally uses UTF-8 encoding and its length is described in a number of
-/// bytes rather than individual characters (a single UTF-8 code point can consist of many bytes).
+/// Indexes and lengths count UTF-16 code units (unless the document was made with
+/// `bytesOffset = true`), in a preliminary text too.
 ///
 /// Like all Yrs shared data types, `YText` is resistant to the problem of interleaving (situation
 /// when characters inserted one after another may interleave with other peers concurrent inserts
@@ -31,7 +29,7 @@ use yrs::{GetString, Observable, Out, Snapshot, Text, TextRef};
 #[derive(uniffi::Object)]
 #[repr(transparent)]
 pub struct YText {
-    inner: Arc<RefCell<SharedCollection<String, TextRef>>>,
+    inner: Arc<SharedCell<String, TextRef>>,
 }
 
 unsafe impl Sync for YText {}
@@ -46,10 +44,8 @@ impl YText {
 
     /// The text's shared ref and its document, resolved in a read-only transaction.
     pub(crate) fn integrated_ref(&self) -> Result<(TextRef, yrs::Doc)> {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => c.read(None, |text, _| Ok((text.clone(), c.doc.clone()))),
-        }
+        let c = integrated_of(&self.inner)?;
+        c.read(None, |text, _| Ok((text.clone(), c.doc.clone())))
     }
 }
 
@@ -63,11 +59,7 @@ impl YText {
     /// document store and cannot be nested again: attempt to do so will result in an exception.
     #[uniffi::constructor]
     pub fn new_with_text(init: Option<String>) -> Self {
-        YText {
-            inner: Arc::new(RefCell::new(SharedCollection::prelim(
-                init.unwrap_or_default(),
-            )))
-        }
+        YText::new(SharedCollection::prelim(init.unwrap_or_default()))
     }
 
     #[inline]
@@ -75,48 +67,33 @@ impl YText {
         TYPE_REFS_TEXT
     }
 
-    /// Returns true if this is a preliminary instance of `YArray`.
-    ///
-    /// Preliminary instances can be nested into other shared data types such as `YArray` and `YMap`.
-    /// Once a preliminary instance has been inserted this way, it becomes integrated into ywasm
-    /// document store and cannot be nested again: attempt to do so will result in an exception.
+    /// Whether this is a preliminary text, not in a document yet.
     #[inline]
     pub fn prelim(&self) -> bool {
-        self.inner.borrow().is_prelim()
+        is_prelim(&self.inner)
     }
 
-    /// Checks if current YArray reference is alive and has not been deleted by its parent collection.
-    /// This method only works on already integrated shared types and will return false is current
-    /// type is preliminary (has not been integrated into document).
-    #[inline]
-    pub fn alive(&self, txn: &YTransaction) -> bool {
-        self.inner.borrow().is_alive(txn)
+    /// Whether the text is in its document, read in `txn`: `false` for a preliminary text or one
+    /// deleted from its parent.
+    pub fn alive(&self, txn: &YTransaction) -> Result<bool> {
+        is_alive(&self.inner, txn)
     }
 
-    /// Returns length of an underlying string stored in this `YText` instance,
-    /// understood as a number of UTF-8 encoded bytes.
+    /// The length of the text (UTF-16 units).
     #[uniffi::method(default(txn=None))]
     pub fn length(&self, txn: Option<Arc<YTransaction>>) -> Result<u32> {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(c) => Ok(c.len() as u32),
-            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.len(txn))),
-        }
+        with_cell(&self.inner, |s| Ok(utf16_len(s)), |c| c.readonly(txn, |c, txn| Ok(c.len(txn))))
     }
 
-    /// Returns an underlying shared string stored in this data type.
+    /// The text as a string, without its formatting.
     #[uniffi::method(name = "toText", default(txn=None))]
     pub fn to_string(&self, txn: Option<Arc<YTransaction>>) -> Result<String> {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(c) => Ok(c.clone()),
-            SharedCollection::Integrated(c) => c.readonly(txn, |c, txn| Ok(c.get_string(txn))),
-        }
+        with_cell(&self.inner, |s| Ok(s.clone()), |c| c.readonly(txn, |c, txn| Ok(c.get_string(txn))))
     }
 
-    /// Inserts a given `chunk` of text into this `YText` instance, starting at a given `index`.
-    ///
-    /// Optional object with defined `attributes` will be used to wrap provided text `chunk`
-    /// with a formatting blocks.`attributes` are only supported for a `YText` instance which
-    /// already has been integrated into document store.
+    /// Inserts `chunk` at `index` (0 ..= `length()`, else `OutOfBounds`), with formatting
+    /// `attributes` given as a JSON object (`InvalidAttributes` otherwise). A preliminary text
+    /// takes no attributes (`NotIntegrated`).
     #[uniffi::method(default(attributes=None, txn=None))]
     pub fn insert(
         &self,
@@ -126,31 +103,34 @@ impl YText {
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
-
-        match self.inner.borrow_mut().deref_mut() {
-            SharedCollection::Prelim(c) => {
-                if let None = attributes {
-                    c.insert_str(index as usize, chunk);
-                    Ok(())
-                } else {
-                    Err(Error::InvalidPrelimOp)
+        let formatted = attributes.is_some();
+        with_cell(
+            &self.inner,
+            |s| {
+                if formatted {
+                    return Err(Error::NotIntegrated);
                 }
-            }
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                if let Some(attrs) = attributes {
-                    c.insert_with_attributes(txn, index, chunk, attrs);
+                let at = utf16_offset(s, index)?;
+                s.insert_str(at, chunk);
+                Ok(())
+            },
+            |c| {
+                c.mutably(txn, |c, txn| {
+                    if index > c.len(txn) {
+                        return Err(Error::OutOfBounds);
+                    }
+                    match attributes {
+                        Some(attrs) => c.insert_with_attributes(txn, index, chunk, attrs),
+                        None => c.insert(txn, index, chunk),
+                    }
                     Ok(())
-                } else {
-                    c.insert(txn, index, chunk);
-                    Ok(())
-                }
-            }),
-        }
+                })
+            },
+        )
     }
 
-    /// Wraps an existing piece of text within a range described by `index`-`length` parameters with
-    /// formatting blocks containing provided `attributes` metadata. This method only works for
-    /// `YText` instances that already have been integrated into document store.
+    /// Formats `length` units from `index` on with `attributes`, a JSON object (a `null` value
+    /// removes that attribute). `OutOfBounds` past the end; `NotIntegrated` for a preliminary text.
     #[uniffi::method(default(txn=None))]
     pub fn format(
         &self,
@@ -159,25 +139,15 @@ impl YText {
         attributes: String,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
-        let attrs = match parse_attrs(Some(attributes))? {
-            Some(attrs) => attrs,
-            None => return Err(Error::InvalidFmt),
-        };
-
-        match &self.inner.borrow_mut().deref_mut() {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                c.format(txn, index, length, attrs);
-                Ok(())
-            }),
-        }
+        let attrs = parse_attrs(Some(attributes))?.unwrap_or_default();
+        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
+            check_range(index, length, c.len(txn))?;
+            c.format(txn, index, length, attrs);
+            Ok(())
+        })
     }
 
-    /// Appends a given `chunk` of text at the end of current `YText` instance.
-    ///
-    /// Optional object with defined `attributes` will be used to wrap provided text `chunk`
-    /// with a formatting blocks.`attributes` are only supported for a `YText` instance which
-    /// already has been integrated into document store.
+    /// Appends `chunk` at the end, with formatting `attributes` as in `insert`.
     #[uniffi::method(default(attributes=None, txn=None))]
     pub fn push(
         &self,
@@ -186,46 +156,55 @@ impl YText {
         txn: Option<Arc<YTransaction>>,
     ) -> Result<()> {
         let attributes = parse_attrs(attributes)?;
-
-        match self.inner.borrow_mut().deref_mut() {
-            SharedCollection::Prelim(ref mut c) => {
-                if let Some(_) = attributes {
-                    Err(Error::InvalidPrelimOp)
-                } else {
-                    c.push_str(chunk);
-                    Ok(())
+        let formatted = attributes.is_some();
+        with_cell(
+            &self.inner,
+            |s| {
+                if formatted {
+                    return Err(Error::NotIntegrated);
                 }
-            }
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                if let Some(attrs) = attributes {
+                s.push_str(chunk);
+                Ok(())
+            },
+            |c| {
+                c.mutably(txn, |c, txn| {
                     let len = c.len(txn);
-                    c.insert_with_attributes(txn, len, chunk, attrs);
+                    match attributes {
+                        Some(attrs) => c.insert_with_attributes(txn, len, chunk, attrs),
+                        None => c.push(txn, chunk),
+                    }
                     Ok(())
-                } else {
-                    c.push(txn, chunk);
-                    Ok(())
-                }
-            }),
-        }
+                })
+            },
+        )
     }
 
-    /// Deletes a specified range of of characters, starting at a given `index`.
-    /// Both `index` and `length` are counted in terms of a number of UTF-8 character bytes.
+    /// Deletes `length` units from `index` on (`OutOfBounds` if the text hasn't got them all).
     #[uniffi::method(default(txn=None))]
     pub fn delete(&self, index: u32, length: u32, txn: Option<Arc<YTransaction>>) -> Result<()> {
-        match self.inner.borrow_mut().deref_mut() {
-            SharedCollection::Prelim(ref mut c) => {
-                c.drain((index as usize)..((index + length) as usize));
+        with_cell(
+            &self.inner,
+            |s| {
+                let end = index.checked_add(length).ok_or(Error::OutOfBounds)?;
+                let (from, to) = (utf16_offset(s, index)?, utf16_offset(s, end)?);
+                s.drain(from..to);
                 Ok(())
-            }
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                c.remove_range(txn, index, length);
-                Ok(())
-            }),
-        }
+            },
+            |c| {
+                c.mutably(txn, |c, txn| {
+                    check_range(index, length, c.len(txn))?;
+                    if length > 0 {
+                        c.remove_range(txn, index, length);
+                    }
+                    Ok(())
+                })
+            },
+        )
     }
 
-    /// Returns the Delta representation of this YText type.
+    /// The text as a delta of inserts with their formatting attributes; between two snapshots, what
+    /// changed (as Yjs's `toDelta(snapshot, prevSnapshot)`). An embedded shared type comes in its
+    /// JSON form. `NotIntegrated` for a preliminary text.
     #[uniffi::method(default(snapshot=None,prev_snapshot=None,txn=None))]
     pub fn to_delta(
         &self,
@@ -233,41 +212,15 @@ impl YText {
         prev_snapshot: Option<Arc<YSnapshot>>,
         txn: Option<Arc<YTransaction>>,
     ) -> Result<Vec<YDelta>> {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                let hi: Option<Snapshot> = if let Some(snap) = snapshot {
-                    let snap = snap.clone().deref().deref().clone();
-                    Some(snap)
-                } else {
-                    None
-                };
-                let lo: Option<Snapshot> = if let Some(snap) = prev_snapshot {
-                    let snap = snap.clone().deref().deref().clone();
-                    Some(snap)
-                } else {
-                    None
-                };
-
-                let delta = c.diff_range(txn, hi.as_ref(), lo.as_ref(), |change| change);
-
-                let mut array: Vec<YDelta> = vec![];
-                for d in delta {
-                    let attrs = match d.attributes {
-                        None => None,
-                        Some(attrs) => Some(into_yattrs(*attrs))
-                    };
-
-                    if let Out::Any(any) = d.insert {
-                        let d = YInsert(into_yvalue(&any), attrs);
-                        array.push(d);
-                    } else {
-                        return Err(Error::InvalidData(d.insert.to_string(txn)));
-                    }
-                }
-                Ok(array)
-            }),
-        }
+        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
+            let hi: Option<Snapshot> = snapshot.map(|snap| snap.deref().deref().clone());
+            let lo: Option<Snapshot> = prev_snapshot.map(|snap| snap.deref().deref().clone());
+            let delta = c.diff_range(txn, hi.as_ref(), lo.as_ref(), |change| change);
+            Ok(delta
+                .into_iter()
+                .map(|d| YDelta::YInsert(out_into_yvalue(&d.insert, &*txn), d.attributes.map(|attrs| into_yattrs(*attrs))))
+                .collect())
+        })
     }
 
     /// Calls `observer` after every committed transaction that changed this text, with the change
@@ -276,35 +229,28 @@ impl YText {
     /// document (see the `observers` module). The subscription stops on `unsubscribe()` or when it
     /// is released.
     pub fn observe(&self, observer: Arc<dyn YTextObserver>) -> ObserveResult {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => {
-                let text: TextRef = {
-                    let txn = c.transact().map_err(|_| Error::AnotherRwTx)?;
-                    c.resolve(&txn)?
-                };
-                let key = subscription_key();
-                let active = Arc::new(AtomicBool::new(true));
-                let running = active.clone();
-                text.observe(key.clone(), move |txn, event| {
-                    if !running.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    observer.on_change(YTextEvent {
-                        delta: text_delta(event.delta(txn), txn),
-                        origin: origin_bytes(txn),
-                    });
-                });
-                // The handle keeps the document alive: `text` points into its store, which must
-                // outlive the unobserve (a subscription may be released after the document).
-                let doc = c.doc.clone();
-                Ok(YSubscription::new(active, move || {
-                    let removed = text.unobserve(key);
-                    drop(doc);
-                    removed
-                }))
+        let c = integrated_of(&self.inner)?;
+        let text: TextRef = c.read(None, |text, _| Ok(text.clone()))?;
+        let key = subscription_key();
+        let active = Arc::new(AtomicBool::new(true));
+        let running = active.clone();
+        text.observe(key.clone(), move |txn, event| {
+            if !running.load(Ordering::SeqCst) {
+                return;
             }
-        }
+            observer.on_change(YTextEvent {
+                delta: text_delta(event.delta(txn), txn),
+                origin: origin_bytes(txn),
+            });
+        });
+        // The handle keeps the document alive: `text` points into its store, which must
+        // outlive the unobserve (a subscription may be released after the document).
+        let doc = c.doc.clone();
+        Ok(YSubscription::new(active, move || {
+            let removed = text.unobserve(key);
+            drop(doc);
+            removed
+        }))
     }
 
     /// A relative position at `index` (UTF-16 units) of this text, as Yjs's
@@ -313,30 +259,45 @@ impl YText {
     /// past the end; at the end with `After` it stays at the end.
     #[uniffi::method(default(txn=None))]
     pub fn sticky_index(&self, index: u32, assoc: YAssoc, txn: Option<Arc<YTransaction>>) -> Result<YStickyIndex> {
-        match self.inner.borrow().deref() {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => c.read(txn, |text, view| {
-                YStickyIndex::at(text, view, index, text.len(view), assoc)
-            }),
-        }
+        integrated_of(&self.inner)?.read(txn, |text, view| YStickyIndex::at(text, view, index, text.len(view), assoc))
     }
 
+    /// Applies a delta (Quill's, Yjs's `applyDelta`): retains (formatting with their attributes),
+    /// inserts with attributes, deletes. A retain past the end stops there; a delete past the end
+    /// throws `OutOfBounds`, before anything is applied.
     #[uniffi::method(default(txn=None))]
     pub fn apply_delta(&self, delta: Vec<YDelta>, txn: Option<Arc<YTransaction>>) -> Result<()> {
-        match self.inner.borrow_mut().deref_mut() {
-            SharedCollection::Prelim(_) => {
-                Err(Error::InvalidPrelimOp)
-            }
-            SharedCollection::Integrated(c) => c.mutably(txn, |c, txn| {
-                let mut result = Vec::new();
-                for yd in delta.iter() {
-                    let d = y_into_delta(yd);
-                    result.push(d);
-                }
-                c.apply_delta(txn, result);
+        integrated_of(&self.inner)?.mutably(txn, |c, txn| {
+            check_delta(&delta, c.len(txn), txn.doc().offset_kind())?;
+            c.apply_delta(txn, delta.iter().map(y_into_delta));
+            Ok(())
+        })
+    }
+}
 
-                Ok(())
-            }),
+/// `OutOfBounds` if `delta` deletes past the end of a text of `len` (yrs would panic half-way). A
+/// retain past the end stops at it, as yrs's does.
+fn check_delta(delta: &[YDelta], len: u32, offsets: yrs::OffsetKind) -> Result<()> {
+    let (mut pos, mut len) = (0u32, len);
+    for step in delta {
+        match step {
+            YDelta::YRetain(n, _) => pos = pos.saturating_add(*n).min(len),
+            YDelta::YInsert(value, _) => {
+                let n = match value {
+                    YValue::String(s) => match offsets {
+                        yrs::OffsetKind::Bytes => s.len() as u32,
+                        yrs::OffsetKind::Utf16 => utf16_len(s),
+                    },
+                    _ => 1,
+                };
+                pos += n;
+                len += n;
+            }
+            YDelta::YDelete(n) => {
+                check_range(pos, *n, len)?;
+                len -= n;
+            }
         }
     }
+    Ok(())
 }

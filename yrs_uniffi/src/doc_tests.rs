@@ -35,7 +35,7 @@ fn within<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
 
 /// What each root-type getter gave, by name: `true` if it threw `AnotherTx`.
 fn every_getter_throws(doc: &YDoc) -> Vec<(&'static str, bool)> {
-    let locked = |r: Result<(), Error>| matches!(r, Err(Error::AnotherTx));
+    let locked = |r: Result<(), Error>| matches!(r, Err(Error::Locked));
     vec![
         ("getText", locked(doc.get_text("t").map(|_| ()))),
         ("getXmlFragment", locked(doc.get_xml_fragment("x").map(|_| ()))),

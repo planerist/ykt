@@ -49,8 +49,8 @@ pub enum YXmlDelta {
 impl Prelim for YXmlChild {
     type Return = XmlOut;
 
-    fn into_content(self, txn: &mut TransactionMut) -> (ItemContent, Option<Self>) {
-        let type_ref = self.type_ref(txn);
+    fn into_content(self, _txn: &mut TransactionMut) -> (ItemContent, Option<Self>) {
+        let type_ref = self.type_ref();
         let branch = Branch::new(type_ref);
         (ItemContent::Type(branch), Some(self))
     }
@@ -82,25 +82,40 @@ impl YXmlChild {
         }
     }
 
-    pub fn assert_xml_prelim(&self) -> crate::tools::Result<()> {
-        let prelim = match self {
-            YXmlChild::Element(e) => e.prelim(),
-            YXmlChild::Fragment(e) => e.prelim(),
-            YXmlChild::Text(e) => e.prelim(),
-        };
-
-        if !prelim {
-            return Err(Error::NotPrelim);
+    /// The node as XML text.
+    pub fn to_text(&self, txn: Option<Arc<crate::transaction::YTransaction>>) -> crate::tools::Result<String> {
+        match self {
+            YXmlChild::Element(c) => c.to_string(txn),
+            YXmlChild::Fragment(c) => c.to_string(txn),
+            YXmlChild::Text(c) => c.to_string(txn),
         }
-
-        Ok(())
     }
 
-    fn type_ref(&self, txn: &TransactionMut) -> TypeRef {
+    /// `AlreadyIntegrated` unless this node and every node in it are preliminary: a node already in
+    /// a document can't be inserted again.
+    pub fn assert_xml_prelim(&self) -> crate::tools::Result<()> {
+        let children = match self {
+            YXmlChild::Element(e) => match &*e.0.try_borrow().map_err(|_| Error::Locked)? {
+                SharedCollection::Prelim(p) => p.children.clone(),
+                SharedCollection::Integrated(_) => return Err(Error::AlreadyIntegrated),
+            },
+            YXmlChild::Fragment(f) => match &*f.0.try_borrow().map_err(|_| Error::Locked)? {
+                SharedCollection::Prelim(children) => children.clone(),
+                SharedCollection::Integrated(_) => return Err(Error::AlreadyIntegrated),
+            },
+            YXmlChild::Text(t) => match &*t.0.try_borrow().map_err(|_| Error::Locked)? {
+                SharedCollection::Prelim(_) => vec![],
+                SharedCollection::Integrated(_) => return Err(Error::AlreadyIntegrated),
+            },
+        };
+        children.iter().try_for_each(|child| child.assert_xml_prelim())
+    }
+
+    fn type_ref(&self) -> TypeRef {
         match self {
             YXmlChild::Element(v) => {
                 let name = match &v.0.borrow().deref() {
-                    SharedCollection::Integrated(_) => panic!("{}", Error::NotPrelim),
+                    SharedCollection::Integrated(_) => unreachable!("checked by assert_xml_prelim"),
                     SharedCollection::Prelim(p) => Arc::from(p.name.as_str()),
                 };
                 TypeRef::XmlElement(name)

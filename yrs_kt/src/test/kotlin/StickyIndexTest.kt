@@ -59,7 +59,7 @@ class StickyIndexTest {
         assertEquals(0u, start.offset(doc)?.index)
         assertEquals(6u, end.offset(doc)?.index)
         assertEquals(4u, beforeC.offset(doc)?.index)
-        assertThrows<Exception.OutOfBounds> { text.stickyIndex(7u, YAssoc.AFTER) }
+        assertThrows<YException.OutOfBounds> { text.stickyIndex(7u, YAssoc.AFTER) }
     }
 
     @Test
@@ -94,9 +94,9 @@ class StickyIndexTest {
     @Test
     fun garbageThrows() {
         for (bytes in listOf(byteArrayOf(), ByteArray(6) { 0xff.toByte() }, byteArrayOf(9, 1, 1, 0), byteArrayOf(0, 1))) {
-            assertThrows<Exception.InvalidData> { YStickyIndex.decode(bytes) }
+            assertThrows<YException.InvalidData> { YStickyIndex.decode(bytes) }
         }
-        assertThrows<Exception.InvalidPrelimOp> { YText.newWithText("abc").stickyIndex(0u, YAssoc.AFTER) }
+        assertThrows<YException.NotIntegrated> { YText.newWithText("abc").stickyIndex(0u, YAssoc.AFTER) }
     }
 
     @Test
@@ -109,7 +109,7 @@ class StickyIndexTest {
             text.insert(0u, "XY", null, txn)
             assertEquals(4u, c.offset(doc, txn)?.index)
             assertEquals(2u, text.stickyIndex(2u, YAssoc.AFTER, txn).offset(doc, txn)?.index)
-            assertThrows<Exception.AnotherRwTx> { c.offset(doc) }
+            assertThrows<YException.Locked> { c.offset(doc) }
         }
         assertEquals(4u, c.offset(doc)?.index)
     }

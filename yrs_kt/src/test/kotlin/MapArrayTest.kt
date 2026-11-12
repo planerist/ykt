@@ -121,9 +121,9 @@ class MapArrayTest {
         array.delete(1u, 2u)
         assertEquals(listOf(str("first"), str("last")), array.toJson())
 
-        assertThrows<Exception.OutOfBounds> { array.insert(3u, listOf(YValue.Null)) }
-        assertThrows<Exception.OutOfBounds> { array.delete(1u, 2u) }
-        assertThrows<Exception.OutOfBounds> { array.get(2u) }
+        assertThrows<YException.OutOfBounds> { array.insert(3u, listOf(YValue.Null)) }
+        assertThrows<YException.OutOfBounds> { array.delete(1u, 2u) }
+        assertThrows<YException.OutOfBounds> { array.get(2u) }
         assertEquals(2u, array.len())
     }
 
@@ -194,8 +194,8 @@ class MapArrayTest {
             array.push(listOf(num(1.0)), txn)
             assertEquals(num(1.0), map.get("k", txn))
             assertEquals(1u, array.len(txn))
-            assertThrows<Exception.AnotherRwTx> { map.get("k") }
-            assertThrows<Exception.AnotherTx> { doc.getMap("m") }
+            assertThrows<YException.Locked> { map.get("k") }
+            assertThrows<YException.Locked> { doc.getMap("m") }
         }
 
         val results = synchronizedList<Boolean>()

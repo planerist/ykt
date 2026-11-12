@@ -387,15 +387,15 @@ fn reads_and_writes_in_a_transaction() {
     // The transaction sees its own changes; without it, the document is locked.
     assert_eq!(map.get("k", Some(txn.clone())).unwrap(), Some(n(1.0)));
     assert_eq!(array.len(Some(txn.clone())).unwrap(), 1);
-    assert!(matches!(map.get("k", None), Err(Error::AnotherRwTx)));
-    assert!(matches!(array.push(vec![], None), Err(Error::AnotherTx)));
-    assert!(matches!(doc.get_map("m"), Err(Error::AnotherTx)), "no waiting for the lock");
-    assert!(matches!(doc.get_array("a"), Err(Error::AnotherTx)));
+    assert!(matches!(map.get("k", None), Err(Error::Locked)));
+    assert!(matches!(array.push(vec![], None), Err(Error::Locked)));
+    assert!(matches!(doc.get_map("m"), Err(Error::Locked)), "no waiting for the lock");
+    assert!(matches!(doc.get_array("a"), Err(Error::Locked)));
 
     txn.commit().unwrap();
-    assert!(matches!(map.get("k", Some(txn.clone())), Err(Error::TxnCommitted)));
-    assert!(matches!(map.set("k", n(2.0), Some(txn.clone())), Err(Error::TxnCommitted)));
-    assert!(matches!(array.len(Some(txn)), Err(Error::TxnCommitted)));
+    assert!(matches!(map.get("k", Some(txn.clone())), Err(Error::TransactionCommitted)));
+    assert!(matches!(map.set("k", n(2.0), Some(txn.clone())), Err(Error::TransactionCommitted)));
+    assert!(matches!(array.len(Some(txn)), Err(Error::TransactionCommitted)));
     assert_eq!(map.get("k", None).unwrap(), Some(n(1.0)));
 }
 

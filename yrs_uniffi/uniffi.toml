@@ -3,5 +3,3 @@ package_name = "com.planerist.ykt"
 
 [bindings.swift]
 module_name = "Ykt"
-# `Error` would shadow Swift.Error in client code
-rename = { Error = "YError" }

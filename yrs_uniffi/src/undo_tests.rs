@@ -301,10 +301,10 @@ fn only_the_scope_is_tracked_and_it_can_grow() {
 fn a_text_of_another_document_or_a_preliminary_one_is_refused() {
     let a = doc(1);
     let b = doc(2);
-    assert!(YUndoManager::new(&a, &b.get_text("t").unwrap(), None).is_err());
-    assert!(matches!(YUndoManager::new(&a, &YText::new_with_text(None), None), Err(Error::InvalidPrelimOp)));
+    assert!(matches!(YUndoManager::new(&a, &b.get_text("t").unwrap(), None), Err(Error::WrongDocument)));
+    assert!(matches!(YUndoManager::new(&a, &YText::new_with_text(None), None), Err(Error::NotIntegrated)));
     let undo = YUndoManager::new(&a, &a.get_text("t").unwrap(), None).unwrap();
-    assert!(undo.expand_scope(&b.get_text("t").unwrap()).is_err());
+    assert!(matches!(undo.expand_scope(&b.get_text("t").unwrap()), Err(Error::WrongDocument)));
 }
 
 // Stack item events and their meta --------------------------------------------------------------------
@@ -434,9 +434,9 @@ fn undo_redo_and_clear_inside_a_transaction_throw() {
     insert(&doc, &text, "editor", 0, "a");
     let txn = doc.transaction(Some("editor".into())).unwrap();
 
-    assert!(matches!(undo.undo(), Err(Error::AnotherTx)));
-    assert!(matches!(undo.redo(), Err(Error::AnotherTx)));
-    assert!(matches!(undo.clear(), Err(Error::AnotherTx)));
+    assert!(matches!(undo.undo(), Err(Error::Locked)));
+    assert!(matches!(undo.redo(), Err(Error::Locked)));
+    assert!(matches!(undo.clear(), Err(Error::Locked)));
     assert!(undo.can_undo().unwrap(), "reading the stacks is fine");
     assert!(YUndoManager::new(&doc, &text, None).is_err(), "so is making a manager");
 
@@ -453,7 +453,7 @@ fn undo_inside_a_text_observer_throws() {
     let results = Arc::new(Mutex::new(vec![]));
     let (u, r) = (undo.clone(), results.clone());
     let _sub = text.observe(Arc::new(TextFn(move |_| {
-        r.lock().unwrap().push(matches!(u.undo(), Err(Error::AnotherTx)));
+        r.lock().unwrap().push(matches!(u.undo(), Err(Error::Locked)));
     }))).unwrap();
 
     insert(&doc, &text, "editor", 0, "a");

@@ -185,9 +185,9 @@ class UndoManagerTest {
         manager(doc, text).use { undo ->
             insert(doc, text, "editor", 0u, "a")
             doc.transact("editor") {
-                assertThrows<Exception.AnotherTx> { undo.undo() }
-                assertThrows<Exception.AnotherTx> { undo.redo() }
-                assertThrows<Exception.AnotherTx> { undo.clear() }
+                assertThrows<YException.Locked> { undo.undo() }
+                assertThrows<YException.Locked> { undo.redo() }
+                assertThrows<YException.Locked> { undo.clear() }
                 assertTrue(undo.canUndo())
             }
 

@@ -268,7 +268,7 @@ fn a_diff_takes_the_v1_state_vector_of_a_doc_or_a_transaction() {
     let replica = doc(2);
     apply(V::Two, &replica, &updates[0]);
     let txn = replica.transaction(None).unwrap();
-    let from_txn = txn.state_vector_v1();
+    let from_txn = txn.state_vector_v1().unwrap();
     txn.commit().unwrap();
 
     let missing = diff_update_v2(full_state(V::Two, &source), from_txn).unwrap();

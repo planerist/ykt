@@ -27,8 +27,6 @@ else
 fi
 
 cargo run --release --features=uniffi/cli --bin uniffi-bindgen generate --language swift --out-dir $OUT --library $BINDGEN_LIB
-# uniffi 0.32 `rename` (see uniffi.toml) misses the error type of throwing constructors
-sed -i '' 's/FfiConverterTypeError_lift/FfiConverterTypeYError_lift/g' $OUT/Ykt.swift
 
 mkdir -p $OUT/include
 cp $OUT/YktFFI.h $OUT/include/

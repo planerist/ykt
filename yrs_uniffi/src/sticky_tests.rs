@@ -182,7 +182,7 @@ fn past_the_end_or_preliminary_is_an_error() {
         assert!(matches!(text.sticky_index(4, assoc, None), Err(Error::OutOfBounds)));
     }
     let prelim = YText::new_with_text(Some("abc".into()));
-    assert!(matches!(prelim.sticky_index(0, YAssoc::After, None), Err(Error::InvalidPrelimOp)));
+    assert!(matches!(prelim.sticky_index(0, YAssoc::After, None), Err(Error::NotIntegrated)));
 }
 
 #[test]
@@ -279,17 +279,17 @@ fn inside_a_transaction() {
     assert_eq!(c.offset(&doc, Some(txn.clone())).unwrap().map(|o| o.index), Some(4));
     assert_eq!(y.offset(&doc, Some(txn.clone())).unwrap().map(|o| o.index), Some(2));
     // Without it, the document is locked.
-    assert!(matches!(c.offset(&doc, None), Err(Error::AnotherRwTx)));
-    assert!(matches!(text.sticky_index(0, YAssoc::After, None), Err(Error::AnotherRwTx)));
+    assert!(matches!(c.offset(&doc, None), Err(Error::Locked)));
+    assert!(matches!(text.sticky_index(0, YAssoc::After, None), Err(Error::Locked)));
     // Another document's transaction doesn't do.
     let other = self::doc(2);
     let other_txn = Arc::new(other.transaction(None).unwrap());
-    assert!(c.offset(&doc, Some(other_txn.clone())).is_err());
+    assert!(matches!(c.offset(&doc, Some(other_txn.clone())), Err(Error::WrongDocument)));
     other_txn.commit().unwrap();
 
     txn.commit().unwrap();
-    assert!(matches!(c.offset(&doc, Some(txn.clone())), Err(Error::TxnCommitted)));
-    assert!(matches!(text.sticky_index(0, YAssoc::After, Some(txn)), Err(Error::TxnCommitted)));
+    assert!(matches!(c.offset(&doc, Some(txn.clone())), Err(Error::TransactionCommitted)));
+    assert!(matches!(text.sticky_index(0, YAssoc::After, Some(txn)), Err(Error::TransactionCommitted)));
     assert_eq!(at(&doc, &c), Some(4));
 }
 

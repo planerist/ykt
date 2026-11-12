@@ -150,7 +150,7 @@ impl YDoc {
         } else {
             self.try_transact_mut()
         }
-        .map_err(|_| Error::AnotherRwTx)?;
+        .map_err(|_| Error::Locked)?;
 
         Ok(YTransaction::from(inner))
     }
@@ -162,7 +162,7 @@ impl YDoc {
     ///
     /// A root of this name that is of another type is read as a text.
     pub fn get_text(&self, name: &str) -> Result<YText> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
         let text = TextRef::root(name).get_or_create(&mut txn);
         drop(txn);
         Ok(YText::new(SharedCollection::integrated(text, self.0.clone())))
@@ -172,7 +172,7 @@ impl YDoc {
     /// (Yjs's `doc.getXmlFragment`). Throws while the document is locked (an open transaction, a
     /// callback) instead of waiting for it.
     pub fn get_xml_fragment(&self, name: &str) -> Result<YXmlFragment> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
         let fragment = XmlFragmentRef::root(name).get_or_create(&mut txn);
         drop(txn);
         Ok(YXmlFragment::new_with_collection(SharedCollection::integrated(fragment, self.0.clone())))
@@ -182,7 +182,7 @@ impl YDoc {
     /// `doc.getMap`). Throws while the document is locked (an open transaction, a callback) instead
     /// of waiting for it.
     pub fn get_map(&self, name: &str) -> Result<YMap> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
         let map = MapRef::root(name).get_or_create(&mut txn);
         drop(txn);
         Ok(YMap(Integrated::new(map, self.0.clone())))
@@ -192,7 +192,7 @@ impl YDoc {
     /// (Yjs's `doc.getArray`). Throws while the document is locked (an open transaction, a
     /// callback) instead of waiting for it.
     pub fn get_array(&self, name: &str) -> Result<YArray> {
-        let mut txn = self.0.try_transact_mut().map_err(|_| Error::AnotherTx)?;
+        let mut txn = self.0.try_transact_mut().map_err(|_| Error::Locked)?;
         let array = ArrayRef::root(name).get_or_create(&mut txn);
         drop(txn);
         Ok(YArray(Integrated::new(array, self.0.clone())))
@@ -210,7 +210,7 @@ impl YDoc {
                     observer.on_update(YUpdateEvent { update: event.update.clone(), origin: origin_bytes(txn) });
                 }
             })
-            .map_err(|_| Error::AnotherTx)?;
+            .map_err(|_| Error::Locked)?;
         active.store(true, Ordering::SeqCst);
         let doc = self.0.clone();
         Ok(YSubscription::new(active, move || doc.unobserve_update_v1(key).unwrap_or(false)))
@@ -225,7 +225,7 @@ impl YDoc {
                     observer.on_update(YUpdateEvent { update: event.update.clone(), origin: origin_bytes(txn) });
                 }
             })
-            .map_err(|_| Error::AnotherTx)?;
+            .map_err(|_| Error::Locked)?;
         active.store(true, Ordering::SeqCst);
         let doc = self.0.clone();
         Ok(YSubscription::new(active, move || doc.unobserve_update_v2(key).unwrap_or(false)))
@@ -247,7 +247,7 @@ impl YDoc {
                     });
                 }
             })
-            .map_err(|_| Error::AnotherTx)?;
+            .map_err(|_| Error::Locked)?;
         active.store(true, Ordering::SeqCst);
         let doc = self.0.clone();
         Ok(YSubscription::new(active, move || doc.unobserve_transaction_cleanup(key).unwrap_or(false)))

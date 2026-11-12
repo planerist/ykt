@@ -1,6 +1,6 @@
 use crate::tools::{Error, Result};
 use crate::transaction::YTransaction;
-use std::ops::{Deref, DerefMut};
+use std::cell::RefCell;
 use std::sync::Arc;
 use yrs::{BranchID, Doc, Hook, ReadTxn, SharedRef, Store, Transact, Transaction, TransactionMut};
 
@@ -21,24 +21,6 @@ impl<P, S: SharedRef + 'static> SharedCollection<P, S> {
         SharedCollection::Integrated(Integrated::new(shared_ref, doc))
     }
 
-    pub fn id(&self) -> Result<BranchID> {
-        match self {
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-            SharedCollection::Integrated(c) => Ok(c.hook.id().clone()),
-        }
-    }
-
-    pub fn try_integrated(&self) -> Result<(&BranchID, &Doc)> {
-        match self {
-            SharedCollection::Integrated(i) => {
-                let branch_id = i.hook.id();
-                let doc = &i.doc;
-                Ok((branch_id, doc))
-            }
-            SharedCollection::Prelim(_) => Err(Error::InvalidPrelimOp),
-        }
-    }
-
     #[inline]
     pub fn is_prelim(&self) -> bool {
         match self {
@@ -46,23 +28,55 @@ impl<P, S: SharedRef + 'static> SharedCollection<P, S> {
             SharedCollection::Integrated(_) => false,
         }
     }
+}
 
-    pub fn is_alive(&self, txn: &YTransaction) -> bool {
-        match self {
-            SharedCollection::Prelim(_) => true,
-            SharedCollection::Integrated(col) => {
-                let desc = &col.hook;
-                desc.get(txn.get_inner().borrow().deref()).is_some()
-            }
-        }
+/// A preliminary type's content, or an integrated type's handle: what a ykt handle's cell holds.
+pub(crate) type SharedCell<P, S> = RefCell<SharedCollection<P, S>>;
+
+/// Runs `prelim` on a preliminary type's content, or `integrated` on an integrated type. The cell
+/// isn't kept borrowed while `integrated` runs: the commit's callbacks may use the same handle (and
+/// get `Locked` from the document rather than a panic from the cell).
+pub(crate) fn with_cell<P, S: Clone, R>(
+    cell: &SharedCell<P, S>,
+    prelim: impl FnOnce(&mut P) -> Result<R>,
+    integrated: impl FnOnce(&Integrated<S>) -> Result<R>,
+) -> Result<R> {
+    let found = match &*cell.try_borrow().map_err(|_| Error::Locked)? {
+        SharedCollection::Integrated(c) => Some(c.clone()),
+        SharedCollection::Prelim(_) => None,
+    };
+    match found {
+        Some(c) => integrated(&c),
+        None => match &mut *cell.try_borrow_mut().map_err(|_| Error::Locked)? {
+            SharedCollection::Prelim(p) => prelim(p),
+            SharedCollection::Integrated(_) => Err(Error::Locked),
+        },
     }
+}
 
-    #[inline]
-    pub fn branch_id(&self) -> Option<&BranchID> {
-        match self {
-            SharedCollection::Prelim(_) => None,
-            SharedCollection::Integrated(v) => Some(v.hook.id()),
-        }
+/// The integrated type of a cell; `NotIntegrated` for a preliminary one.
+pub(crate) fn integrated_of<P, S: Clone>(cell: &SharedCell<P, S>) -> Result<Integrated<S>> {
+    match &*cell.try_borrow().map_err(|_| Error::Locked)? {
+        SharedCollection::Integrated(c) => Ok(c.clone()),
+        SharedCollection::Prelim(_) => Err(Error::NotIntegrated),
+    }
+}
+
+/// Whether a cell holds a preliminary type.
+pub(crate) fn is_prelim<P, S: SharedRef + 'static>(cell: &SharedCell<P, S>) -> bool {
+    cell.try_borrow().map(|c| c.is_prelim()).unwrap_or(false)
+}
+
+/// Whether a cell's type is in its document, read in `txn` (of that document): `false` for a
+/// preliminary type or a deleted one.
+pub(crate) fn is_alive<P, S: SharedRef + Clone + 'static>(cell: &SharedCell<P, S>, txn: &YTransaction) -> Result<bool> {
+    match integrated_of(cell) {
+        Ok(c) => txn.read(|txn| {
+            c.check_doc(txn.doc())?;
+            Ok(c.hook.get(txn).is_some())
+        }),
+        Err(Error::NotIntegrated) => Ok(false),
+        Err(e) => Err(e),
     }
 }
 
@@ -78,48 +92,43 @@ impl<S: SharedRef + 'static> Integrated<S> {
         Integrated { hook: desc, doc }
     }
 
+    pub fn id(&self) -> &BranchID {
+        self.hook.id()
+    }
+
+    /// Runs `f` with the type, in `txn` if given (a transaction of this type's document), else in a
+    /// read-write transaction of its own.
     pub fn readonly<F, R>(&self, txn: Option<Arc<YTransaction>>, f: F) -> Result<R>
     where
         F: FnOnce(&S, &TransactionMut<'_>) -> Result<R>,
     {
         match txn {
-            Some(txn) => {
-                let inner = txn.get_inner();
-                let txn = inner.borrow();
-                if txn.committed {
-                    return Err(Error::TxnCommitted);
-                }
-                let txn = txn.deref();
-                let txn = txn.deref();
-                let shared_ref= self.resolve(txn)?;
-                f(&shared_ref, txn)
-            }
+            Some(txn) => txn.read(|txn| {
+                self.check_doc(txn.doc())?;
+                f(&self.resolve(txn)?, txn)
+            }),
             None => {
-                let txn = self.transact_mut()?; // :( rust type inference problem
-                let shared_ref= self.resolve(&txn)?;
-                f(&shared_ref, &txn)
+                let txn = self.transact_mut()?;
+                f(&self.resolve(&txn)?, &txn)
             }
         }
     }
 
+    /// Runs `f` with the type and a transaction to write in: `txn` if given (of this type's
+    /// document), else one of its own, committed when `f` returns.
     pub fn mutably<F, T>(&self, txn: Option<Arc<YTransaction>>, f: F) -> Result<T>
     where
         F: FnOnce(&S, &mut TransactionMut<'_>) -> Result<T>,
     {
         match txn {
-            Some(txn) => {
-                let inner = txn.get_inner();
-                let mut txn = inner.borrow_mut();
-                if txn.committed {
-                    return Err(Error::TxnCommitted);
-                }
-                let txn = txn.deref_mut();
+            Some(txn) => txn.write(|txn| {
+                self.check_doc(txn.doc())?;
                 let shared_ref = self.resolve(txn)?;
                 f(&shared_ref, txn)
-            }
+            }),
             None => {
                 let mut txn = self.transact_mut()?;
-                let shared_ref = self.resolve(&mut txn)?;
+                let shared_ref = self.resolve(&txn)?;
                 f(&shared_ref, &mut txn)
             }
         }
@@ -132,15 +141,11 @@ impl<S: SharedRef + 'static> Integrated<S> {
         F: FnOnce(&S, &ReadView<'_>) -> Result<R>,
     {
         match txn {
-            Some(txn) => {
-                let inner = txn.get_inner();
-                let txn = inner.borrow();
-                if txn.committed {
-                    return Err(Error::TxnCommitted);
-                }
+            Some(txn) => txn.read(|txn| {
+                self.check_doc(txn.doc())?;
                 let view = ReadView(txn.store());
                 f(&self.resolve(&view)?, &view)
-            }
+            }),
             None => {
                 let txn = self.transact()?;
                 let view = ReadView(txn.store());
@@ -150,24 +155,24 @@ impl<S: SharedRef + 'static> Integrated<S> {
     }
 
     pub fn resolve<T: ReadTxn>(&self, txn: &T) -> Result<S> {
-        match self.hook.get(txn) {
-            Some(shared_ref) => Ok(shared_ref),
-            None => Err(Error::RefDisposed),
+        self.hook.get(txn).ok_or(Error::TypeDeleted)
+    }
+
+    /// `WrongDocument` unless `doc` is this type's document.
+    pub fn check_doc(&self, doc: &Doc) -> Result<()> {
+        if same_doc(doc, &self.doc) {
+            Ok(())
+        } else {
+            Err(Error::WrongDocument)
         }
     }
 
-    pub fn transact(&self) -> Result<Transaction> {
-        match self.doc.try_transact() {
-            Ok(tx) => Ok(tx),
-            Err(_) => Err(Error::AnotherRwTx),
-        }
+    pub fn transact(&self) -> Result<Transaction<'_>> {
+        self.doc.try_transact().map_err(|_| Error::Locked)
     }
 
-    pub fn transact_mut(&self) -> Result<TransactionMut> {
-        match self.doc.try_transact_mut() {
-            Ok(tx) => Ok(tx),
-            Err(_) => Err(Error::AnotherTx),
-        }
+    pub fn transact_mut(&self) -> Result<TransactionMut<'_>> {
+        self.doc.try_transact_mut().map_err(|_| Error::Locked)
     }
 }
 

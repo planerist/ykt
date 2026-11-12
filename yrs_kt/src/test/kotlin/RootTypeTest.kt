@@ -19,7 +19,7 @@ class RootTypeTest {
             try {
                 body().close()
                 "$name works"
-            } catch (e: Exception.AnotherTx) {
+            } catch (e: YException.Locked) {
                 "$name throws"
             }
         return listOf(

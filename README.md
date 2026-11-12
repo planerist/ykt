@@ -83,7 +83,7 @@ fun main() {
 
 Root types: `YDoc.getText(name)`, `getXmlFragment(name)`, `getMap(name)`, `getArray(name)` return the
 document's root type of that name, creating it the first time (Yjs's `doc.getText` and so on); the same
-name gives the same type, through any handle. They throw `AnotherTx` while the document is locked — in
+name gives the same type, through any handle. They throw `Locked` while the document is locked — in
 an open transaction or an observer's callback — instead of waiting for a lock that can't come there.
 Since 0.5.0 `getText` and `getXmlFragment` throw too (they used to wait, for good, in those places):
 Swift callers need `try`.
@@ -124,7 +124,7 @@ let updates = try doc.observeUpdateV2 { event in send(event.update) }
 
 Rules:
 - Callbacks run synchronously on the thread that commits the transaction, while the document is
-  still locked: they must not read or write the document (that throws `AnotherTx`); everything they
+  still locked: they must not read or write the document (that throws `Locked`); everything they
   need is in the event. Defer anything else.
 - Unsubscribing is safe anywhere, inside a callback too: the callback is switched off at once.
 - Subscribing to document events while a transaction is open throws.
@@ -228,7 +228,7 @@ _ = try undo.undo()
 ```
 
 Rules: the manager's callbacks run with the document locked, and inside them neither the document
-nor the manager may be used (that throws `AnotherTx`). `undo()`, `redo()` and `clear()` throw inside
+nor the manager may be used (that throws `Locked`). `undo()`, `redo()` and `clear()` throw inside
 a transaction or any callback instead of waiting for the lock. Release the manager on the thread
 that uses the document; one released while the document is locked can't detach from it and stays
 in memory with it (harmlessly).
@@ -267,6 +267,33 @@ let settings = try doc.getMap(name: "settings")
 try settings.set(key: "theme", value: .string("dark"))
 let sub = try doc.getArray(name: "tags").observe { event in render(event.delta) }
 ```
+
+## Errors
+One error type: Swift `YError`, Kotlin `YException` (a sealed class). Every case carries a message
+(Swift `case Locked(message: String)`, Kotlin `e.message`) that says what happened; match on the case,
+not the text (`catch YError.OutOfBounds`, `catch (e: YException.OutOfBounds)`).
+
+| Case | When |
+|---|---|
+| `Locked` | The document is locked on this thread: a transaction is open, or a callback runs while one commits (also an undo manager in the middle of a call or one of its callbacks; a transaction used inside its own commit's callbacks). ykt throws instead of waiting for a lock that can't come. |
+| `TransactionCommitted` | A transaction used after `commit()` (or after `transact { }` ended): any of its methods, or passed to a type's. |
+| `WrongDocument` | A transaction, a text or a document that isn't the one the call belongs to: another document's transaction passed to a type's method (root types are found by name, so it would have written into the other document), another document's text as an undo scope, a position read in another document's transaction. |
+| `TypeDeleted` | The shared type was deleted from its document (a nested node its parent removed). |
+| `NotIntegrated` | A preliminary type (made with its constructor, not in a document yet) where a document is needed: formatting, attributes on insert, deltas, observing, positions, an undo scope. |
+| `AlreadyIntegrated` | A node already in a document inserted again (or given as a new node's child, at any depth). |
+| `OutOfBounds` | An index or a range past the end: text insert / delete / format, a delta deleting past the end (checked before anything is applied), array and XML children, positions. Indexes count UTF-16 units in preliminary texts too. |
+| `InvalidAttributes` | Formatting attributes that aren't a JSON object. |
+| `InvalidData` | Bytes that aren't a valid update, state vector, snapshot or relative position, or are in the other encoding (v1 / v2); an update yrs can't apply. Never a crash: malformed v2 input, on which yrs panics, is caught. |
+| `GcEnabled` | `encodeStateFromSnapshot` on a document that collects garbage: past states need `YDocOptions(gc = false)`. |
+
+Changed in 0.5.0 (from 0.4.0's `Error` / Kotlin `Exception`): `AnotherTx` and `AnotherRwTx` → `Locked`;
+`TxnCommitted` → `TransactionCommitted`; `RefDisposed` → `TypeDeleted`; `InvalidPrelimOp` →
+`NotIntegrated`; `NotPrelim` → `AlreadyIntegrated`; `InvalidFmt` → `InvalidAttributes`; `InvalidParent`
+→ `InvalidData`; `Custom` → `WrongDocument` (the only thing it said); `InvalidTransactionCtx` and
+`InvalidDelta` removed (nothing threw them); `GcEnabled` new. Calls that used to panic (an index past
+the end of a text or of XML children, a delta deleting past the end, a handle or a transaction used
+inside its own commit's callbacks, malformed v2 bytes in `applyUpdateV2`) or to read freed memory (a
+transaction's methods after its commit) throw the case above instead.
 
 ## Roadmap / What’s implemented
 Source is inspired by y-crdt’s ywasm project.
@@ -316,7 +343,6 @@ Source is inspired by y-crdt’s ywasm project.
   - [ ] Better Attrs interface (typed attributes instead of JSON strings for insert / format)
   - [ ] YOutput: full type coverage (to_delta: shared types embedded in a text)
   - [ ] Thread safety without external locking (yrs `sync`, a lock instead of `RefCell`)
-  - [ ] Review & simplify Error types
   - [x] `getText` / `getXmlFragment` throw while the document is locked (as `getMap` / `getArray`)
     instead of waiting for the lock — inside a transaction or a callback they blocked for good
 

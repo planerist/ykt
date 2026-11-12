@@ -114,14 +114,14 @@ class UpdateTest {
         val (_, updates) = edited(false)
         for (bytes in listOf(byteArrayOf(), ByteArray(12) { 0xff.toByte() }, byteArrayOf(1, 2, 3))) {
             for (v2 in listOf(false, true)) {
-                assertThrows<Exception.InvalidData> { merge(listOf(bytes), v2) }
-                assertThrows<Exception.InvalidData> { diff(bytes, byteArrayOf(0), v2) }
-                assertThrows<Exception.InvalidData> { stateVectorOf(bytes, v2) }
+                assertThrows<YException.InvalidData> { merge(listOf(bytes), v2) }
+                assertThrows<YException.InvalidData> { diff(bytes, byteArrayOf(0), v2) }
+                assertThrows<YException.InvalidData> { stateVectorOf(bytes, v2) }
             }
         }
-        assertThrows<Exception.InvalidData> { mergeUpdatesV1(listOf(updates[0], ByteArray(5) { 0xff.toByte() })) }
-        assertThrows<Exception.InvalidData> { diffUpdateV1(updates[0], byteArrayOf(0xff.toByte(), 0xff.toByte())) }
-        assertThrows<Exception.InvalidData>("a v1 update isn't v2") { mergeUpdatesV2(listOf(updates[0])) }
+        assertThrows<YException.InvalidData> { mergeUpdatesV1(listOf(updates[0], ByteArray(5) { 0xff.toByte() })) }
+        assertThrows<YException.InvalidData> { diffUpdateV1(updates[0], byteArrayOf(0xff.toByte(), 0xff.toByte())) }
+        assertThrows<YException.InvalidData>("a v1 update isn't v2") { mergeUpdatesV2(listOf(updates[0])) }
         // Every cut of a real update: a result or an exception, never a crash.
         val all = merge(edited(true).second, true)
         for (length in 0 until all.size) {

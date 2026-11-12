@@ -159,6 +159,18 @@ public extension YDoc {
     }
 }
 
+public extension YAwareness {
+    /// Yjs's awareness `change`: clients added, removed, or whose state changed.
+    func observeChange(_ onChange: @escaping @Sendable (YAwarenessEvent) -> Void) throws -> YSubscription {
+        try observeChange(observer: AwarenessObserverClosure(onChange))
+    }
+
+    /// Yjs's awareness `update`: every state that comes or is set, unchanged ones too.
+    func observeUpdate(_ onUpdate: @escaping @Sendable (YAwarenessEvent) -> Void) throws -> YSubscription {
+        try observeUpdate(observer: AwarenessObserverClosure(onUpdate))
+    }
+}
+
 // MARK: - Nested shared types
 
 public extension YOutput {
@@ -206,6 +218,10 @@ public extension YXmlEvent {
 }
 
 public extension YAfterTransactionEvent {
+    var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
+}
+
+public extension YAwarenessEvent {
     var originString: String? { origin.map { String(decoding: $0, as: UTF8.self) } }
 }
 
@@ -283,4 +299,10 @@ private final class DestroyObserverClosure: YDestroyObserver, @unchecked Sendabl
     let body: @Sendable (YDestroyEvent) -> Void
     init(_ body: @escaping @Sendable (YDestroyEvent) -> Void) { self.body = body }
     func onDestroy(event: YDestroyEvent) { body(event) }
+}
+
+private final class AwarenessObserverClosure: YAwarenessObserver, @unchecked Sendable {
+    let body: @Sendable (YAwarenessEvent) -> Void
+    init(_ body: @escaping @Sendable (YAwarenessEvent) -> Void) { self.body = body }
+    func onChange(event: YAwarenessEvent) { body(event) }
 }

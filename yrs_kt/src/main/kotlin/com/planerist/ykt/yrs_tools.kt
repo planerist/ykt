@@ -164,6 +164,16 @@ fun YDoc.observeDestroy(onEvent: (YDestroyEvent) -> Unit): YSubscription =
         override fun onDestroy(event: YDestroyEvent) = onEvent(event)
     })
 
+private class AwarenessObserverLambda(val body: (YAwarenessEvent) -> Unit) : YAwarenessObserver {
+    override fun onChange(event: YAwarenessEvent) = body(event)
+}
+
+/** Yjs's awareness `change`: clients added, removed, or whose state changed. */
+fun YAwareness.observeChange(onChange: (YAwarenessEvent) -> Unit): YSubscription = observeChange(AwarenessObserverLambda(onChange))
+
+/** Yjs's awareness `update`: every state that comes or is set, unchanged ones too. */
+fun YAwareness.observeUpdate(onUpdate: (YAwarenessEvent) -> Unit): YSubscription = observeUpdate(AwarenessObserverLambda(onUpdate))
+
 // Nested shared types: what a YOutput holds, or null for anything else.
 val YOutput.asValue: YValue? get() = (this as? YOutput.Value)?.value
 val YOutput.asText: YText? get() = (this as? YOutput.Text)?.text
@@ -182,3 +192,4 @@ val YDeepEvent.originString: String? get() = origin?.decodeToString()
 val YXmlEvent.originString: String? get() = origin?.decodeToString()
 val YAfterTransactionEvent.originString: String? get() = origin?.decodeToString()
 val YSubdocsEvent.originString: String? get() = origin?.decodeToString()
+val YAwarenessEvent.originString: String? get() = origin?.decodeToString()

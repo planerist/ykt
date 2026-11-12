@@ -345,6 +345,48 @@ if case .text(let title)? = try note.getOutput(key: "title") { try title.insert(
 let undo = try YUndoManager.forMap(doc: doc, scope: note, options: YUndoOptions(trackedOrigins: ["editor"]))
 ```
 
+## Awareness
+`YAwareness(doc, clock?)` — y-protocols' awareness (yrs's `sync::Awareness`): short-lived state each
+client shares with its peers (a cursor, a selection, a name and colour) outside the document's history.
+States travel as awareness updates in y-protocols' encoding, so they mix with Yjs clients'.
+
+- `setLocalState(state: YValue)` / `setLocalStateJson(json)`, `localState()` / `localStateJson()`,
+  `clearLocalState()` (Yjs's `setLocalState(null)`: the client is gone); the local client is the
+  document's client id (`clientId()`);
+- `states()` — every client with a state (`statesJson()` as JSON; a state that isn't JSON, from a broken
+  peer, is left out of `states()`), `meta(clientId)` — its clock and when it last came;
+- `encodeUpdate(clients?)` — what to send to peers: by default every state, and the local client once
+  cleared (so clear, then send, before going offline); with ids, those (e.g. an event's);
+  `applyUpdate(bytes, origin?)` — a peer's update (garbage throws `InvalidData`);
+- `removeStates(clients)` — e.g. of a peer whose connection closed (Yjs's `removeAwarenessStates`);
+  `removeOutdated(timeoutMillis)` — Yjs's outdated check (30 s there; call it every few seconds):
+  removes peers not heard of for that long, renews the local state once older than half of it, so
+  peers doing the same keep it; returns the removed ids;
+- `observeChange` (clients added, removed, or whose state changed: Yjs's `change`) and `observeUpdate`
+  (every state that comes or is set, unchanged ones too: Yjs's `update`) — `YAwarenessEvent(added,
+  updated, removed, origin)`.
+
+Time is the system clock, or a `YAwarenessClock` (`nowMillis()`) given to the constructor. A typed state
+is sent as JSON with its keys sorted, so the same state set again is no change for anyone. The
+observers' rules hold: callbacks run while the awareness is in use, and calling it there throws
+`Locked`. yrs's removal bumps a peer's clock (its next state would be ignored): ykt removes peers as
+Yjs does, keeping their clock.
+
+```kotlin
+val awareness = YAwareness(doc)
+awareness.setLocalState(YValue.AttrMap(mapOf("name" to YValue.String("Ann"), "cursor" to YValue.Number(3.0))))
+awareness.observeUpdate { event -> send(awareness.encodeUpdate(event.added + event.updated + event.removed)) }
+onMessage { bytes -> awareness.applyUpdate(bytes, "remote".toByteArray()) }
+timer(3_000) { awareness.removeOutdated(30_000uL) }
+```
+
+```swift
+let awareness = YAwareness(doc: doc)
+try awareness.setLocalState(state: .attrMap(["name": .string("Ann")]))
+let sub = try awareness.observeChange { event in redrawCursors(event.added + event.updated, gone: event.removed) }
+try awareness.applyUpdate(update: bytes, origin: Data("remote".utf8))
+```
+
 ## Errors
 One error type: Swift `YError`, Kotlin `YException` (a sealed class). Every case carries a message
 (Swift `case Locked(message: String)`, Kotlin `e.message`) that says what happened; match on the case,
@@ -352,7 +394,7 @@ not the text (`catch YError.OutOfBounds`, `catch (e: YException.OutOfBounds)`).
 
 | Case | When |
 |---|---|
-| `Locked` | The document is locked on this thread: a transaction is open, or a callback runs while one commits (also an undo manager in the middle of a call or one of its callbacks; a transaction used inside its own commit's callbacks). ykt throws instead of waiting for a lock that can't come. |
+| `Locked` | The document is locked on this thread: a transaction is open, or a callback runs while one commits (also an undo manager or an awareness in the middle of a call or one of its callbacks; a transaction used inside its own commit's callbacks). ykt throws instead of waiting for a lock that can't come. |
 | `TransactionCommitted` | A transaction used after `commit()` (or after `transact { }` ended): any of its methods, or passed to a type's. |
 | `WrongDocument` | A transaction, a text or a document that isn't the one the call belongs to: another document's transaction passed to a type's method (root types are found by name, so it would have written into the other document), another document's text as an undo scope, a position read in another document's transaction. |
 | `TypeDeleted` | The shared type was deleted from its document (a nested node its parent removed). |
@@ -360,7 +402,7 @@ not the text (`catch YError.OutOfBounds`, `catch (e: YException.OutOfBounds)`).
 | `AlreadyIntegrated` | A node already in a document inserted again (or given as a new node's child, at any depth). |
 | `OutOfBounds` | An index or a range past the end: text insert / delete / format, a delta deleting past the end (checked before anything is applied), array and XML children, positions. Indexes count UTF-16 units in preliminary texts too. |
 | `InvalidAttributes` | Formatting attributes that aren't a JSON object. |
-| `InvalidData` | Bytes that aren't a valid update, state vector, snapshot or relative position, or are in the other encoding (v1 / v2); an update yrs can't apply. Never a crash: malformed v2 input, on which yrs panics, is caught. |
+| `InvalidData` | Bytes that aren't a valid update, state vector, snapshot, relative position or awareness update, or are in the other encoding (v1 / v2); an update yrs can't apply; an awareness state given as JSON that isn't JSON. Never a crash: malformed v2 input, on which yrs panics, is caught. |
 | `GcEnabled` | `encodeStateFromSnapshot` on a document that collects garbage: past states need `YDocOptions(gc = false)`. |
 
 Changed in 0.5.0 (from 0.4.0's `Error` / Kotlin `Exception`): `AnotherTx` and `AnotherRwTx` → `Locked`;
@@ -413,7 +455,7 @@ Source is inspired by y-crdt’s ywasm project.
     with meta)
   - [x] Update utilities without a document: merge_updates, diff_update,
     encode_state_vector_from_update (v1 and v2)
-  - [ ] Awareness
+  - [x] Awareness (`YAwareness`: local state, peers' states, updates, outdated check, observers)
 
 - Utilities & ergonomics
   - [x] Typed attributes (`YAttributes`) besides JSON strings for insert / format

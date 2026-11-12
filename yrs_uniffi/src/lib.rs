@@ -28,6 +28,7 @@ mod xml_text;
 mod xml;
 mod output;
 mod events;
+mod awareness;
 #[cfg(test)]
 mod doc_tests;
 #[cfg(test)]
@@ -38,5 +39,7 @@ mod attrs_tests;
 mod nested_tests;
 #[cfg(test)]
 mod events_tests;
+#[cfg(test)]
+mod awareness_tests;
 
 uniffi::setup_scaffolding!();
